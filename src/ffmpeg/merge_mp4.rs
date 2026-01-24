@@ -8,15 +8,40 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use which::which;
+
 pub async fn run_ffmpeg_merge(
     files: Vec<PathBuf>,
     output_path: PathBuf,
     tx: Coroutine<MergeEvent>,
 ) {
+    // Validate FFmpeg installation
     if which("ffmpeg").is_err() {
         tx.send(MergeEvent::Error(
             "未找到FFmpeg，请确保已安装并添加到系统PATH中".to_string(),
         ));
+        return;
+    }
+
+    // Validate input files
+    for file in &files {
+        if !file.exists() {
+            tx.send(MergeEvent::Error(format!("文件不存在: {}", file.display())));
+            return;
+        }
+        if !file.is_file() {
+            tx.send(MergeEvent::Error(format!("不是文件: {}", file.display())));
+            return;
+        }
+    }
+
+    // Validate output directory
+    if let Some(parent) = output_path.parent()
+        && !parent.exists()
+    {
+        tx.send(MergeEvent::Error(format!(
+            "输出目录不存在: {}",
+            parent.display()
+        )));
         return;
     }
 
@@ -47,8 +72,21 @@ pub async fn run_ffmpeg_merge(
     };
 
     for file_path in &files {
-        let abs_path = std::fs::canonicalize(file_path).unwrap_or_else(|_| file_path.clone());
-        writeln!(temp_file, "file '{}'", abs_path.display()).ok();
+        let abs_path = match std::fs::canonicalize(file_path) {
+            Ok(path) => path,
+            Err(e) => {
+                tx.send(MergeEvent::Error(format!(
+                    "无法解析文件路径 {}: {}",
+                    file_path.display(),
+                    e
+                )));
+                return;
+            }
+        };
+        if let Err(e) = writeln!(temp_file, "file '{}'", abs_path.display()) {
+            tx.send(MergeEvent::Error(format!("写入临时文件失败: {}", e)));
+            return;
+        }
     }
     let temp_path = temp_file.path().to_path_buf();
 
