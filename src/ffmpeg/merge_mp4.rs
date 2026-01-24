@@ -93,6 +93,7 @@ pub async fn run_ffmpeg_merge(
     tx.send(MergeEvent::Status("启动FFmpeg合并...".to_string()));
 
     let mut child = match Command::new("ffmpeg")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .args([
             "-f",
             "concat",
@@ -141,7 +142,10 @@ pub async fn run_ffmpeg_merge(
 
     match child.wait().await {
         Ok(status) if status.success() => {
-            tx.send(MergeEvent::Complete);
+            tx.send(MergeEvent::Success(format!(
+                "文件已保存到: {}",
+                output_path.display()
+            )));
         }
         Ok(status) => {
             tx.send(MergeEvent::Error(format!(
@@ -157,6 +161,7 @@ pub async fn run_ffmpeg_merge(
 
 async fn get_video_duration(path: &Path) -> Result<f64, String> {
     let output = Command::new("ffmpeg")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .args(["-i", path.to_str().unwrap()])
         .output()
         .await

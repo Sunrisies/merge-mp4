@@ -3,14 +3,17 @@
 [web.app]
 
 # HTML title tag content
-title = "hot_dog"
+title = "merge-mp4"
+watch_path = ["src", "assets"]
+asset_dir = "assets"
+out_dir = "dist"
+
 
 # include `assets` in web platform
 [web.resource]
 
 # Additional CSS style files
 style = []
-
 # Additional JavaScript files
 script = []
 
@@ -19,3 +22,12 @@ script = []
 # Javascript code file
 # serve: [dev-server] only
 script = []
+
+[bundle]
+identifier = "com.sunrise.merge-mp4"      # 重要！Windows打包需要
+publisher = "sunrise"
+copyright = "Copyright (c) 2026"
+category = "Developer Tool"
+short_description = "MP4文件合并工具"
+long_description = "使用FFmpeg合并多个MP4文件的工具"
+icon = ["icons/icon.ico"]

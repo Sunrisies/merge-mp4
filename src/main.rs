@@ -25,7 +25,7 @@ enum MergeEvent {
     Progress(f64),
     Status(String),
     Error(String),
-    Complete,
+    Success(String),
 }
 fn main() {
     let window_width = 600.0;
@@ -75,12 +75,12 @@ fn App() -> Element {
 #[component]
 pub fn Mp4Merger() -> Element {
     let mut files: Signal<Vec<PathBuf>> = use_signal(Vec::new);
-    let mut output_path: Signal<Option<PathBuf>> = use_signal(|| None);
     let mut output_filename: Signal<String> = use_signal(String::new);
     let mut progress: Signal<f64> = use_signal(|| 0.0);
     let mut is_merging: Signal<bool> = use_signal(|| false);
     let mut status_message: Signal<String> = use_signal(Default::default);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
+    let mut success_message: Signal<Option<String>> = use_signal(|| None);
     let mut config: Signal<AppConfig> = use_signal(|| {
         AppConfig::load().unwrap_or_else(|e| {
             eprintln!("Failed to load config: {}", e);
@@ -96,6 +96,18 @@ pub fn Mp4Merger() -> Element {
                 ToastOptions::new()
                     .description(error)
                     .duration(Duration::from_secs(5))
+                    .permanent(false),
+            );
+        }
+    });
+
+    use_effect(move || {
+        if let Some(success) = success_message() {
+            toast.success(
+                "合并成功!".to_string(),
+                ToastOptions::new()
+                    .description(success)
+                    .duration(Duration::from_secs(3))
                     .permanent(false),
             );
         }
@@ -136,31 +148,6 @@ pub fn Mp4Merger() -> Element {
 
     let mut remove_file = move |index: usize| {
         files.write().remove(index);
-    };
-
-    let select_output = {
-        move |_| async move {
-            let config_value = config();
-            let default_dir = config_value.get_output_directory();
-
-            let mut dialog = rfd::AsyncFileDialog::new()
-                .add_filter("MP4 Files", &["mp4"])
-                .set_title("选择输出文件");
-
-            // Set default directory if available
-            if default_dir.exists() {
-                dialog = dialog.set_directory(&default_dir);
-            }
-
-            // Set default filename if available
-            if !output_filename().is_empty() {
-                dialog = dialog.set_file_name(output_filename());
-            }
-
-            if let Some(result) = dialog.save_file().await {
-                output_path.set(Some(result.path().to_path_buf()));
-            }
-        }
     };
 
     let select_output_directory = {
@@ -213,9 +200,11 @@ pub fn Mp4Merger() -> Element {
                     error_message.set(Some(e));
                     is_merging.set(false);
                 }
-                MergeEvent::Complete => {
+
+                MergeEvent::Success(msg) => {
                     progress.set(100.0);
                     status_message.set("合并完成!".to_string());
+                    success_message.set(Some(msg));
                     sleep(Duration::from_secs(2)).await;
                     is_merging.set(false);
                 }
@@ -251,15 +240,16 @@ pub fn Mp4Merger() -> Element {
             let tx_for_task = tx;
             let files_value = files();
 
+            let output_path_final_clone = output_path_final.clone();
             spawn(async move {
-                run_ffmpeg_merge(files_value, output_path_final, tx_for_task).await;
+                run_ffmpeg_merge(files_value, output_path_final_clone, tx_for_task).await;
             });
         }
     };
 
     rsx! {
-        div { class: "h-screen",
-            div { class: "max-w-2xl mx-auto pt-4",
+        div { class: "h-screen overflow-hidden",
+            div { class: "h-full max-w-2xl mx-auto pt-4 overflow-y-auto",
                 // 标题区域
                 div { class: "text-center mb-2",
                     h1 { class: "text-4xl font-bold mb-2 tracking-tight", "🎬 MP4文件合并工具" }
@@ -349,29 +339,6 @@ pub fn Mp4Merger() -> Element {
                                 class: "bg-gray-500/20 hover:bg-gray-500/40 text-gray-400 hover:text-gray-300 font-medium py-1.5 px-3 rounded-lg transition-all duration-200 text-sm",
                                 onclick: clear_output_directory,
                                 "🗑️ 清除"
-                            }
-                        }
-                    }
-                }
-
-                // 输出文件选择区域（可选）
-                div { class: "p-6 border-b border-gray-700",
-                    h2 { class: "text-sm font-semibold mb-4 flex items-center gap-2",
-                        "📂 "
-                        "选择输出文件路径（可选）"
-                    }
-                    div { class: "flex gap-3",
-                        button {
-                            class: "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700  font-semibold py-2.5 px-5 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-lg",
-                            onclick: select_output,
-                            "💾 选择输出文件"
-                        }
-                    }
-
-                    if let Some(output) = output_path.read().as_ref().cloned() {
-                        div { class: "mt-4 p-3 bg-gray-700/50 rounded-lg border border-gray-600",
-                            p { class: "text-gray-300 text-sm break-all",
-                                "📍 输出路径: {output.display()}"
                             }
                         }
                     }
