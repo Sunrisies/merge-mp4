@@ -7,8 +7,9 @@ use dioxus_primitives::toast::{ToastOptions, use_toast};
 mod components;
 mod config;
 mod ffmpeg;
-use components::button::{Button, ButtonVariant};
-use components::input::Input;
+use components::about_footer::AboutFooter;
+use components::button::Button;
+use components::file_list::FileList;
 use components::progress::{Progress, ProgressIndicator};
 use components::toast::ToastProvider;
 use config::AppConfig;
@@ -17,6 +18,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
 
+use crate::components::output_settings::OutputSettings;
 use crate::ffmpeg::merge_mp4::run_ffmpeg_merge;
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -157,7 +159,7 @@ pub fn Mp4Merger() -> Element {
         }
     };
 
-    let mut remove_file = move |index: usize| {
+    let remove_file = move |index: usize| {
         files.write().remove(index);
     };
 
@@ -279,36 +281,8 @@ pub fn Mp4Merger() -> Element {
                     }
 
                     // 文件列表
-                    div { class: "mt-2",
-                        if !files.read().is_empty() {
-                            div { class: "space-y-2 max-h-52 overflow-y-auto pr-2 custom-scrollbar",
-                                for (index , file) in files.read().iter().cloned().enumerate() {
-                                    div { class: "flex items-center justify-between py-1 px-2 rounded-lg border border-gray-600 hover:border-gray-500 transition-colors",
-                                        div { class: "flex items-center gap-3 overflow-hidden",
-                                            span { class: "text-gray-400 text-sm font-mono",
-                                                "{index + 1}."
-                                            }
-                                            span { class: " truncate flex-1 max-w-100",
-                                                "{file.file_name().unwrap().to_string_lossy()}"
-                                            }
-                                        }
-                                        Button {
-                                            variant: ButtonVariant::Destructive,
-                                            onclick: move |_| remove_file(index),
-                                            "删除"
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            div { class: "text-center py-8 border-2 border-dashed border-gray-600 rounded-lg",
-                                p { class: "text-gray-500 text-lg", "尚未选择任何文件" }
-                                p { class: "text-gray-600 text-sm mt-1",
-                                    "点击上方按钮添加MP4文件"
-                                }
-                            }
-                        }
-                    }
+                    FileList { files, on_remove: remove_file }
+
                 }
 
                 // 输出文件名设置区域
@@ -316,36 +290,13 @@ pub fn Mp4Merger() -> Element {
                     h2 { class: "text-sm font-semibold mb-2 flex items-center gap-2",
                         "输出文件设置"
                     }
-                    div { class: "space-y-3",
-                        div { class: "flex items-center gap-3",
-                            span { class: "text-gray-400 text-sm", "文件名:" }
-                            Input {
-                                placeholder: "输入输出文件名 (例如: merged.mp4)",
-                                value: "{output_filename()}",
-                                oninput: move |e: FormEvent| output_filename.set(e.value()),
-                            }
-                        }
-                        div { class: "flex items-center gap-3",
-                            span { class: "text-gray-400 text-sm", "目录:" }
-                            span { class: "flex-1 text-gray-300 text-sm break-all",
-                                if let Some(dir) = config().output_directory.as_ref() {
-                                    "{dir.display()}"
-                                } else {
-                                    "使用默认目录"
-                                }
-                            }
-                            Button {
-                                variant: ButtonVariant::Secondary,
-                                onclick: select_output_directory,
-                                "选择目录"
-                            }
-                            Button {
-                                variant: ButtonVariant::Secondary,
-                                onclick: clear_output_directory,
-                                "清除"
-                            }
-                        }
+                    OutputSettings {
+                        output_filename,
+                        config,
+                        on_select_dir: select_output_directory,
+                        on_clear_dir: clear_output_directory,
                     }
+
                 }
 
                 // 合并按钮和状态区域
@@ -375,29 +326,13 @@ pub fn Mp4Merger() -> Element {
                         }
                     }
                 }
-
-                div { class: "px-3 py-2 border-t border-gray-700 absolute bottom-0 w-full ",
-                    h2 { class: "text-sm font-semibold mb-2 m-auto text-center w-full",
-                        "关于"
-                    }
-                    div { class: "flex justify-between items-center",
-                        p { class: "text-gray-500 text-sm",
-                            "这是一个使用Rust编写的视频合并工具。"
-                        }
-                        p { class: "text-gray-500 text-sm", "作者: {author}" }
-                        p { class: "text-gray-500 text-sm", "版本: {version}" }
-                    }
-                }
+                AboutFooter { author: "{author}", version: "{version}" }
             }
 
         }
 
     }
 }
-
-// pub fn add(a: i32, b: i32) -> i32 {
-//     a + b
-// }
 
 #[cfg(test)]
 mod tests {
