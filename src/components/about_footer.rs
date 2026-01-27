@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn AboutFooter(version: String, author: String) -> Element {
     rsx! {
-        div { class: "px-3 py-2 border-t border-gray-700 absolute bottom-0 w-full ",
+        div { class: "px-3 py-2 border-t border-gray-700",
             h2 { class: "text-sm font-semibold mb-2 m-auto text-center w-full", "关于" }
             div { class: "flex justify-between items-center",
                 p { class: "text-gray-500 text-sm",

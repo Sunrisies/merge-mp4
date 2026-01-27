@@ -8,7 +8,7 @@ authors = ["朝阳 3266420686@qq.com"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.1", features = [] }
+dioxus = { version = "0.7.1", features = ["fullstack", "router"] }
 dioxus-desktop = "0.7.3"
 tokio = { version = "1", features = ["full"] }
 rfd = "0.17.2"
