@@ -32,7 +32,6 @@ enum MergeEvent {
 fn main() {
     let window_width = 600.0;
     let window_height = 700.0;
-
     let event_loop = EventLoop::new();
     let monitor = event_loop.primary_monitor().unwrap();
     let monitor_size = monitor.size();
@@ -76,6 +75,16 @@ fn App() -> Element {
 
 #[component]
 pub fn Mp4Merger() -> Element {
+    let version = env!("CARGO_PKG_VERSION");
+    let authors = env!("CARGO_PKG_AUTHORS");
+    // 如果需要将作者字符串分割成列表
+    let mut author = String::from("");
+
+    let author_list: Vec<&str> = authors.split(':').collect();
+    for (i, _author) in author_list.iter().enumerate() {
+        println!("作者 {}: {}", i + 1, author);
+        author = _author.trim().to_string();
+    }
     let mut files: Signal<Vec<PathBuf>> = use_signal(Vec::new);
     let mut output_filename: Signal<String> = use_signal(String::new);
     let mut progress: Signal<f64> = use_signal(|| 0.0);
@@ -364,6 +373,19 @@ pub fn Mp4Merger() -> Element {
                                 ProgressIndicator {}
                             }
                         }
+                    }
+                }
+
+                div { class: "px-3 py-2 border-t border-gray-700 absolute bottom-0 w-full ",
+                    h2 { class: "text-sm font-semibold mb-2 m-auto text-center w-full",
+                        "关于"
+                    }
+                    div { class: "flex justify-between items-center",
+                        p { class: "text-gray-500 text-sm",
+                            "这是一个使用Rust编写的视频合并工具。"
+                        }
+                        p { class: "text-gray-500 text-sm", "作者: {author}" }
+                        p { class: "text-gray-500 text-sm", "版本: {version}" }
                     }
                 }
             }

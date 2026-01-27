@@ -3,6 +3,7 @@ name = "merge-mp4"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+authors = ["朝阳 3266420686@qq.com"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,7 +19,7 @@ tempfile = "3.24.0"
 which = "8.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-dirs = "5.0"
+dirs = "6.0.0"
 
 [features]
 default = ["desktop"]
