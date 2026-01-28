@@ -6,4 +6,5 @@ pub mod input;
 pub mod mp4_merger;
 pub mod output_settings;
 pub mod progress;
+pub mod tabs;
 pub mod toast;

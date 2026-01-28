@@ -2,4 +2,6 @@
 enum Route {
     #[route("/")]
     DogView,
+    #[route("/analyze")]
+    Mp4AnalyzerView,
 }

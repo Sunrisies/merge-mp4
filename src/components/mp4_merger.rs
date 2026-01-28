@@ -13,7 +13,7 @@ use crate::components::output_settings::OutputSettings;
 use crate::config::AppConfig;
 use crate::ffmpeg::merge_mp4::run_ffmpeg_merge;
 #[component]
-pub fn Mp4Merger() -> Element {
+pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
     let mut files: Signal<Vec<PathBuf>> = use_signal(Vec::new);
     let mut output_filename: Signal<String> = use_signal(String::new);
     let mut progress: Signal<f64> = use_signal(|| 0.0);
@@ -21,13 +21,7 @@ pub fn Mp4Merger() -> Element {
     let mut status_message: Signal<String> = use_signal(Default::default);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     let mut success_message: Signal<Option<String>> = use_signal(|| None);
-    let mut config: Signal<AppConfig> = use_signal(|| {
-        AppConfig::load().unwrap_or_else(|e| {
-            eprintln!("Failed to load config: {}", e);
-            AppConfig::default()
-        })
-    });
-    println!("config{:?}", config);
+
     let toast = use_toast();
 
     use_effect(move || {
@@ -208,11 +202,6 @@ pub fn Mp4Merger() -> Element {
     rsx! {
         div { class: " flex-1",
             div { class: "max-w-2xl mx-auto pt-2 overflow-y-auto",
-                // 标题区域
-                div { class: "text-center mb-2",
-                    h1 { class: "text-3xl font-bold mb-2 tracking-tight", "MP4文件合并工具" }
-                }
-
                 // 主要内容卡片
                 div { class: "bg-gray-800/80 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-700 overflow-hidden" }
 

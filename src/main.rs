@@ -7,6 +7,8 @@ mod components;
 mod config;
 mod ffmpeg;
 use crate::components::mp4_merger::Mp4Merger;
+use crate::components::tabs::*;
+use crate::config::AppConfig;
 use components::about_footer::AboutFooter;
 use components::toast::ToastProvider;
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -55,15 +57,6 @@ enum Route {
 }
 #[component]
 fn Layout() -> Element {
-    rsx! {
-      main { class: "h-screen flex flex-col",
-        div { id: "main" }
-        Outlet::<Route> {}
-      }
-    }
-}
-#[component]
-fn Index() -> Element {
     let version = env!("CARGO_PKG_VERSION");
     let authors = env!("CARGO_PKG_AUTHORS");
     // 如果需要将作者字符串分割成列表
@@ -75,18 +68,56 @@ fn Index() -> Element {
         author = _author.trim().to_string();
     }
     rsx! {
-      // 错误消息（固定在底部）
-      ToastProvider { Mp4Merger {} }
-      AboutFooter { author: "{author}", version: "{version}" }
+        main { class: "h-screen flex flex-col",
+            div { class: "flex-1", Outlet::<Route> {} }
+            AboutFooter { author: "{author}", version: "{version}" }
+
+        }
     }
 }
 #[component]
+fn Index() -> Element {
+    let config: Signal<AppConfig> = use_signal(|| {
+        AppConfig::load().unwrap_or_else(|e| {
+            eprintln!("Failed to load config: {}", e);
+            AppConfig::default()
+        })
+    });
+
+    println!("config{:?}", config);
+    rsx! {
+
+        Tabs { default_value: "tab1".to_string(), horizontal: true,
+            TabList {
+                TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
+                TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
+            }
+            TabContent { index: 0usize, value: "tab1".to_string(), class: "flex-1",
+
+                ToastProvider {
+                    Mp4Merger { config }
+                }
+
+            }
+            TabContent {
+                index: 1usize,
+                class: "tabs-content flex-1",
+                value: "tab2".to_string(),
+            }
+
+        }
+
+        // 错误消息（固定在底部）
+    }
+}
+
+#[component]
 fn App() -> Element {
     rsx! {
-      document::Link { rel: "icon", href: FAVICON }
-      document::Link { rel: "stylesheet", href: MAIN_CSS }
-      document::Link { rel: "stylesheet", href: TAILWIND_CSS }
-      Router::<Route> {}
+        document::Link { rel: "icon", href: FAVICON }
+        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        Router::<Route> {}
     }
 }
 
