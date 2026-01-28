@@ -6,6 +6,7 @@ use std::path::PathBuf;
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppConfig {
     pub output_directory: Option<PathBuf>,
+    pub last_input_directory: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -48,7 +49,7 @@ impl AppConfig {
         })?;
 
         let app_config_dir = config_dir.join("merge-mp4");
-
+        println!("Config dir: {:?}", app_config_dir);
         Ok(app_config_dir.join("config.json"))
     }
 
@@ -63,5 +64,15 @@ impl AppConfig {
         self.output_directory
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+    }
+    /// 设置最后一个输入目录并保存配置
+    pub fn set_last_input_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.last_input_directory = Some(path);
+        self.save()
+    }
+
+    /// 获取最后一个输入目录，如果未设置，则回退到None
+    pub fn get_last_input_directory(&self) -> Option<PathBuf> {
+        self.last_input_directory.clone()
     }
 }

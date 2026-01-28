@@ -27,6 +27,7 @@ pub fn Mp4Merger() -> Element {
             AppConfig::default()
         })
     });
+    println!("config{:?}", config);
     let toast = use_toast();
 
     use_effect(move || {
@@ -75,13 +76,30 @@ pub fn Mp4Merger() -> Element {
 
     let add_files = {
         move |_| async move {
-            if let Some(result) = rfd::AsyncFileDialog::new()
+            let mut dialog = rfd::AsyncFileDialog::new()
                 .add_filter("MP4 Files", &["mp4"])
-                .set_title("选择MP4文件")
-                .pick_files()
-                .await
-            {
-                files.write().extend(result.into_iter().map(PathBuf::from));
+                .set_title("选择MP4文件");
+
+            // 如果有上次选择的目录，设置为初始目录
+            if let Some(dir) = config().get_last_input_directory() {
+                dialog = dialog.set_directory(dir);
+            }
+
+            if let Some(result) = dialog.pick_files().await {
+                // 获取第一个文件的父目录作为下次的初始目录
+                if let Some(first_file) = result.first() {
+                    // 使用 path() 方法获取文件路径，然后再调用 parent()
+                    if let Some(parent_dir) = first_file.path().parent() {
+                        let dir_path: PathBuf = parent_dir.to_path_buf();
+                        if let Err(e) = config.write().set_last_input_directory(dir_path) {
+                            error_message.set(Some(format!("无法保存输入目录设置: {}", e)));
+                        }
+                    }
+                }
+
+                files
+                    .write()
+                    .extend(result.into_iter().map(|f| f.path().to_path_buf()));
             }
         }
     };
