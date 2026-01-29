@@ -4,12 +4,23 @@ use crate::config::AppConfig;
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 use std::path::PathBuf;
+// MP4 文件信息结构
+#[derive(Debug, Clone)]
+pub struct Mp4FileInfo {
+    pub file_name: String,
+    pub size: u64,
+    pub modified: Option<std::time::SystemTime>,
+    pub width: u16,
+    pub height: u16,
+    pub codec: String,    // H.264 / H.265 / HEVC / AV1 等
+    pub duration: String, // 秒
+}
 
 #[component]
 pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut selected_directory: Signal<Option<PathBuf>> =
         use_signal(|| config.read().get_query_directory());
-    let mut files: Signal<Vec<PathBuf>> = use_signal(Vec::new);
+    let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
 
@@ -25,14 +36,34 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 let result =
                     tokio::task::spawn_blocking(move || match std::fs::read_dir(&directory) {
                         Ok(entries) => {
-                            let mp4_files: Vec<PathBuf> = entries
-                                .filter_map(|entry| entry.ok())
-                                .map(|entry| entry.path())
-                                .filter(|path| {
-                                    path.is_file()
-                                        && path
-                                            .extension()
-                                            .is_some_and(|ext| ext.eq_ignore_ascii_case("mp4"))
+                            let mp4_files: Vec<Mp4FileInfo> = entries
+                                .filter_map(|entry| {
+                                    let entry = entry.ok()?;
+                                    let path = entry.path();
+
+                                    // 只处理 .mp4 文件
+                                    if !path.is_file() {
+                                        return None;
+                                    }
+                                    if !path
+                                        .extension()
+                                        .map(|ext| ext.eq_ignore_ascii_case("mp4"))
+                                        .unwrap_or(false)
+                                    {
+                                        return None;
+                                    }
+
+                                    // 解析 MP4 信息
+                                    match parse_mp4_info(path) {
+                                        Ok(info) => {
+                                            println!("解析到文件信息: {:?}", info);
+                                            Some(info)
+                                        }
+                                        Err(e) => {
+                                            println!("解析文件信息失败: {}", e);
+                                            None
+                                        }
+                                    }
                                 })
                                 .collect();
                             Ok(mp4_files)
@@ -135,11 +166,20 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     }
                 } else if !files.read().is_empty() {
                     div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
-                        table { class: "w-full table-fixed divide-y divide-gray-200",
+                        table { class: "w-full table-auto divide-y divide-gray-200",
                             thead { class: "bg-gray-50 sticky top-0 z-10",
                                 tr {
-                                    th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/2",
+                                    th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
                                         "文件名"
+                                    }
+                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                                        "分辨率"
+                                    }
+                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                                        "编码格式"
+                                    }
+                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                                        "时长"
                                     }
                                     th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
                                         "大小"
@@ -150,25 +190,40 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                 }
                             }
                             tbody { class: "bg-white divide-y divide-gray-200",
-                                for file in files.read().iter() {
+                                for info in files.read().iter() {
                                     tr {
                                         td {
                                             class: "px-2 py-4 text-sm text-gray-900 truncate",
-                                            title: r#"{file.file_name().and_then(|n| n.to_str()).unwrap_or("未知文件")}"#,
-                                            {file.file_name().and_then(|n| n.to_str()).unwrap_or("未知文件")}
+                                            title: "{info.file_name}",
+                                            {info.file_name.clone()}
                                         }
-                                        td {
-                                            class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            title: "{format_size(file.metadata().and_then(|m| Ok(m.len())).ok())}",
-                                            {format_size(file.metadata().map(|m| m.len()).ok())}
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                            {
+                                                if info.width > 0 && info.height > 0 {
+                                                    format!("{}x{}", info.width, info.height)
+                                                } else {
+                                                    "未知".to_string()
+                                                }
+                                            }
+                                        }
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                            {info.codec.clone()}
+                                        }
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                            {info.duration.clone()}
+                                        }
+                                        td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                            // title: "{format_size(file.metadata().and_then(|m| Ok(m.len())).ok())}",
+                                            {format_size(Some(info.size))}
                                         }
                                         td {
                                             class: "px-2 py-4 text-sm text-gray-500 truncate",
-                                            title: "{format_date(file.metadata().and_then(|m| m.modified()).ok())}",
-                                            {format_date(file.metadata().ok().and_then(|m| m.modified().ok()))}
+                                            title: "{format_date(info.modified)}",
+                                            {format_date(info.modified)}
                                         }
                                     }
                                 }
+
                             }
                         }
                     }
@@ -197,5 +252,72 @@ fn format_date(modified: Option<std::time::SystemTime>) -> String {
             datetime.format("%Y-%m-%d %H:%M:%S").to_string()
         }
         _ => "未知".to_string(),
+    }
+}
+
+/// 解析单个 MP4 文件信息
+fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::Error>> {
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("未知文件")
+        .to_string();
+
+    let metadata = std::fs::metadata(&path)?;
+    let modified = metadata.modified().ok();
+    let size = metadata.len();
+
+    // 使用 mp4 库解析视频信息
+    let file = std::fs::File::open(&path)?;
+    let size_u64 = file.metadata()?.len();
+    let reader = std::io::BufReader::new(file);
+
+    let mp4 = mp4::Mp4Reader::read_header(reader, size_u64)?;
+
+    // 获取视频轨道信息
+    let mut width = 0u16;
+    let mut height = 0u16;
+    let mut codec = "未知".to_string();
+    // let mut duration = None::<f64>;
+    let duration = mp4.duration().as_secs_f64();
+    let duration = format_duration(duration);
+
+    for track in mp4.tracks().values() {
+        if let mp4::TrackType::Video = track.track_type()? {
+            width = track.width();
+            height = track.height();
+            // 编解码器类型
+            codec = match track.media_type() {
+                Ok(mp4::MediaType::H264) => "H.264 / AVC".to_string(),
+                Ok(mp4::MediaType::H265) => "H.265 / HEVC".to_string(),
+                Ok(mp4::MediaType::VP9) => "VP9".to_string(),
+                Ok(other) => format!("{:?}", other),
+                Err(_) => "未知".to_string(),
+            };
+            break; // 只取第一个视频轨道
+        }
+    }
+
+    Ok(Mp4FileInfo {
+        file_name,
+        size,
+        modified,
+        width,
+        height,
+        codec,
+        duration,
+    })
+}
+
+fn format_duration(seconds: f64) -> String {
+    let total_seconds = seconds.round() as u32;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    if hours > 0 {
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    } else {
+        format!("{:02}:{:02}", minutes, seconds)
     }
 }
