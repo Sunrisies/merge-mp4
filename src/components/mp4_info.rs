@@ -50,6 +50,24 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
     let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
     let deleting_files: Signal<HashSet<PathBuf>> = use_signal(Default::default); // 新增：跟踪正在删除的文件
+    // 分页状态
+    let mut current_page: Signal<usize> = use_signal(|| 1); // 从1开始
+    let mut page_size: Signal<usize> = use_signal(|| 20); // 默认每页20条
+    let total_pages = {
+        let files_len = files.read().len();
+        let size = *page_size.read();
+        files_len.div_ceil(size)
+    };
+
+    // 计算当前页的文件切片
+    let paginated_files = {
+        let all_files = files.read();
+        let page = *current_page.read();
+        let size = *page_size.read();
+        let start = (page - 1) * size;
+        let end = (start + size).min(all_files.len());
+        all_files[start..end].to_vec()
+    };
     // 提取核心逻辑为无参闭包，避免重复代码
     let mut perform_scan = move || {
         // 开始时间
@@ -193,7 +211,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         let mut sort_by_clone = sort_by;
         let mut sort_desc_clone = sort_desc;
         let mut files_clone = files;
-
+        let mut current_page_clone = current_page; // 添加
         move |field: SortBy| {
             let current_field = *sort_by.read();
             let current_desc = *sort_desc_clone.read();
@@ -211,7 +229,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             // 获取新的排序参数
             let new_field = *sort_by_clone.read();
             let new_desc = *sort_desc_clone.read();
-
+            current_page_clone.set(1);
             // 对文件进行排序
             let mut sorted_files = files_clone.read().clone();
             sort_mp4_files(&mut sorted_files, new_field, new_desc);
@@ -251,7 +269,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             let mut files = files;
             let mut error_message = error_message;
             let mut deleting_files = deleting_files;
-
+            let mut current_page = current_page; // 需要添加这个捕获
             spawn(async move {
                 // 显示确认对话框
                 if deleting_files.read().contains(&path) {
@@ -279,22 +297,35 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 if result == rfd::MessageDialogResult::Ok {
                     // 开始时间
                     let start = Instant::now();
-                    // 在所有权被转移前，克隆一份 path 用于后续比较
-                    // let path_for_comparison = path.clone();
                     // 使用spawn_blocking执行文件系统操作
                     let delete_result =
                         tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
 
                     match delete_result {
                         Ok(Ok(_)) => {
-                            // 从列表中移除
-                            let mut files_guard = files.write();
-                            if let Some(pos) = files_guard
-                                .iter()
-                                .position(|f| f.file_path == path_for_operations)
-                            {
-                                files_guard.remove(pos);
-                                println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
+                            let remaining_count = {
+                                let mut files_guard = files.write();
+                                if let Some(pos) = files_guard
+                                    .iter()
+                                    .position(|f| f.file_path == path_for_operations)
+                                {
+                                    files_guard.remove(pos);
+                                    println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
+                                }
+                                // 返回剩余数量，这样就不需要在持有锁的时候读取
+                                files_guard.len()
+                            }; // 这里写锁被释放
+                            // 现在可以安全地读取，不需要files_clone
+                            let size = *page_size.read();
+                            let new_total_pages = if remaining_count == 0 {
+                                1
+                            } else {
+                                remaining_count.div_ceil(size)
+                            };
+
+                            let current = *current_page.read();
+                            if current > new_total_pages {
+                                current_page.set(new_total_pages.max(1));
                             }
                         }
                         Ok(Err(e)) => {
@@ -309,6 +340,36 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 // 无论结果如何，都从删除集合中移除
                 deleting_files.write().remove(&path_for_operations);
             });
+        }
+    };
+    // 分页控制函数
+    let mut go_to_page = move |page: usize| {
+        let total = total_pages;
+        if page >= 1 && page <= total {
+            current_page.set(page);
+        }
+    };
+
+    let mut go_prev = move || {
+        let current = *current_page.read();
+        if current > 1 {
+            current_page.set(current - 1);
+        }
+    };
+
+    let mut go_next = move || {
+        let current = *current_page.read();
+        let total = total_pages;
+        if current < total {
+            current_page.set(current + 1);
+        }
+    };
+
+    let mut set_page_size = {
+        let mut current_page = current_page;
+        move |new_size: usize| {
+            page_size.set(new_size);
+            current_page.set(1); // 切换每页数量时回到第一页
         }
     };
 
@@ -386,7 +447,44 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     }
                 } else if !files.read().is_empty() {
                     div { class: "flex flex-col gap-2",
-                        div { class: "text-sm text-gray-600", "共 {files.len()} 个文件" }
+                        // 顶部统计和分页控制
+                        div { class: "flex justify-between items-center text-sm text-gray-600",
+                            span { "共 {files.len()} 个文件" }
+
+                            // 每页数量选择
+                            div { class: "flex items-center gap-2",
+                                span { "每页" }
+                                select {
+                                    class: "border rounded px-2 py-1 text-sm bg-white",
+                                    onchange: move |evt| {
+                                        if let Ok(size) = evt.value().parse::<usize>() {
+                                            set_page_size(size);
+                                        }
+                                    },
+                                    option {
+                                        value: "10",
+                                        selected: *page_size.read() == 10,
+                                        "10"
+                                    }
+                                    option {
+                                        value: "20",
+                                        selected: *page_size.read() == 20,
+                                        "20"
+                                    }
+                                    option {
+                                        value: "50",
+                                        selected: *page_size.read() == 50,
+                                        "50"
+                                    }
+                                    option {
+                                        value: "100",
+                                        selected: *page_size.read() == 100,
+                                        "100"
+                                    }
+                                }
+                                span { "条" }
+                            }
+                        }
                         div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
                             table { class: "w-full table-auto divide-y divide-gray-200",
                                 thead { class: "bg-gray-50 sticky top-0 z-10",
@@ -428,7 +526,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                     }
                                 }
                                 tbody { class: "bg-white divide-y divide-gray-200",
-                                    for info in files.read().iter() {
+                                    for info in paginated_files.iter() {
                                         tr {
                                             td {
                                                 class: "px-2 py-4 text-sm text-gray-900 truncate",
@@ -488,6 +586,60 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                         }
                                     }
 
+                                }
+                            }
+                        }
+                        // 分页控制器
+                        if total_pages > 1 {
+                            div { class: "flex justify-center items-center gap-2 mt-2",
+                                // 首页
+                                Button {
+                                    class: "px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed",
+                                    disabled: *current_page.read() == 1,
+                                    onclick: move |_| go_to_page(1),
+                                    "⏮ 首页"
+                                }
+
+                                // 上一页
+                                Button {
+                                    class: "px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50",
+                                    disabled: *current_page.read() == 1,
+                                    onclick: move |_| go_prev(),
+                                    "◀ 上一页"
+                                }
+
+                                // 页码显示和跳转
+                                div { class: "flex items-center gap-2 mx-4",
+                                    span { "第" }
+                                    input {
+                                        r#type: "number",
+                                        class: "w-16 px-2 py-1 text-center border rounded text-sm",
+                                        min: "1",
+                                        max: "{total_pages}",
+                                        value: "{current_page}",
+                                        onchange: move |evt| {
+                                            if let Ok(page) = evt.value().parse::<usize>() {
+                                                go_to_page(page);
+                                            }
+                                        },
+                                    }
+                                    span { "页 / 共 {total_pages} 页" }
+                                }
+
+                                // 下一页
+                                Button {
+                                    class: "px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50",
+                                    disabled: *current_page.read() >= total_pages,
+                                    onclick: move |_| go_next(),
+                                    "下一页 ▶"
+                                }
+
+                                // 末页
+                                Button {
+                                    class: "px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50",
+                                    disabled: *current_page.read() >= total_pages,
+                                    onclick: move |_| go_to_page(total_pages),
+                                    "末页 ⏭"
                                 }
                             }
                         }
