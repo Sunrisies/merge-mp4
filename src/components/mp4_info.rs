@@ -3,6 +3,8 @@ use crate::components::input::Input;
 use crate::config::AppConfig;
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
+use std::collections::HashSet;
+use std::time::Instant;
 use std::{
     path::PathBuf,
     sync::{
@@ -19,8 +21,9 @@ pub struct Mp4FileInfo {
     pub modified: Option<std::time::SystemTime>,
     pub width: u16,
     pub height: u16,
-    pub codec: String,    // H.264 / H.265 / HEVC / AV1 等
-    pub duration: String, // 秒
+    pub codec: String,      // H.264 / H.265 / HEVC / AV1 等
+    pub duration: String,   // 秒
+    pub file_path: PathBuf, // 添加文件路径
 }
 // 进度状态
 #[derive(Debug, Clone, Default)]
@@ -46,8 +49,11 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut progress: Signal<ScanProgress> = use_signal(ScanProgress::default);
     let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
     let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
+    let deleting_files: Signal<HashSet<PathBuf>> = use_signal(Default::default); // 新增：跟踪正在删除的文件
     // 提取核心逻辑为无参闭包，避免重复代码
     let mut perform_scan = move || {
+        // 开始时间
+        let start = Instant::now();
         let dir = selected_directory.read().clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         should_cancel.set(cancel_flag.clone());
@@ -109,7 +115,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         });
                         match parse_mp4_info(path) {
                             Ok(info) => {
-                                println!("解析到文件信息: {:?}", info);
+                                // println!("解析到文件信息: {:?}", info);
                                 mp4_files.push(info);
                             }
                             Err(e) => {
@@ -126,6 +132,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 match result {
                     Ok(Ok(mp4_files)) => {
                         println!("扫描到 {} 个 MP4 文件", mp4_files.len(),);
+                        println!("扫描耗时: {:.2} 秒", start.elapsed().as_secs());
                         files.set(mp4_files);
                     }
                     Ok(Err(e)) => {
@@ -181,6 +188,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     };
     // 2. 在组件中使用排序函数
     let handle_sort = {
+        // 开始时间
+        let start = Instant::now();
         let mut sort_by_clone = sort_by;
         let mut sort_desc_clone = sort_desc;
         let mut files_clone = files;
@@ -206,6 +215,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             // 对文件进行排序
             let mut sorted_files = files_clone.read().clone();
             sort_mp4_files(&mut sorted_files, new_field, new_desc);
+            println!("排序耗时: {:.2} 毫秒", start.elapsed().as_millis());
             files_clone.set(sorted_files);
         }
     };
@@ -213,6 +223,95 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         let mut handle_sort_clone = handle_sort;
         move || handle_sort_clone(SortBy::Duration)
     };
+
+    let open_file = {
+        // let error_message = error_message.clone();
+        move |path: PathBuf| {
+            // let mut error_message = error_message.clone();
+            spawn(async move {
+                // /select 参数：打开资源管理器并选中指定文件
+                let result = std::process::Command::new("explorer")
+                    .args(["/select,", &path.to_string_lossy()])
+                    .spawn();
+
+                if let Err(e) = result {
+                    error_message.set(Some(format!("无法打开资源管理器: {}", e)));
+                }
+            });
+        }
+    };
+
+    // 删除文件（带确认对话框）
+    let delete_file = {
+        // let files = files.clone();
+        // let error_message = error_message.clone();
+        // let deleting_files = deleting_files.clone();
+        move |path: PathBuf| {
+            let path_for_operations = path.clone();
+            let mut files = files;
+            let mut error_message = error_message;
+            let mut deleting_files = deleting_files;
+
+            spawn(async move {
+                // 显示确认对话框
+                if deleting_files.read().contains(&path) {
+                    return;
+                }
+                // 添加到删除集合
+                deleting_files.write().insert(path.clone());
+
+                // 显示确认对话框
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "未知文件".to_string());
+
+                let result = rfd::AsyncMessageDialog::new()
+                    .set_title("确认删除")
+                    .set_description(format!(
+                        "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
+                        file_name
+                    ))
+                    .set_buttons(rfd::MessageButtons::OkCancel)
+                    .show()
+                    .await;
+
+                if result == rfd::MessageDialogResult::Ok {
+                    // 开始时间
+                    let start = Instant::now();
+                    // 在所有权被转移前，克隆一份 path 用于后续比较
+                    // let path_for_comparison = path.clone();
+                    // 使用spawn_blocking执行文件系统操作
+                    let delete_result =
+                        tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
+
+                    match delete_result {
+                        Ok(Ok(_)) => {
+                            // 从列表中移除
+                            let mut files_guard = files.write();
+                            if let Some(pos) = files_guard
+                                .iter()
+                                .position(|f| f.file_path == path_for_operations)
+                            {
+                                files_guard.remove(pos);
+                                println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            error_message.set(Some(format!("删除失败: {}", e)));
+                        }
+                        Err(e) => {
+                            error_message.set(Some(format!("任务失败: {}", e)));
+                        }
+                    }
+                }
+
+                // 无论结果如何，都从删除集合中移除
+                deleting_files.write().remove(&path_for_operations);
+            });
+        }
+    };
+
     rsx! {
         div { class: "flex flex-col space-y-4 p-4 bg-white rounded-lg shadow-md",
             h2 { class: "text-xl font-semibold text-gray-800 mb-2", "MP4 文件信息" }
@@ -263,7 +362,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     div { class: "mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200",
                         div { class: "flex justify-between items-center mb-2",
                             div {
-                                class: "text-sm font-medium text-gray-700 truncate max-w-[400px]",
+                                class: "text-sm font-medium text-gray-700 truncate max-w-[350px]",
                                 title: "正在扫描: {progress.read().current_file}",
                                 "正在扫描: {progress.read().current_file}"
                             }
@@ -323,6 +422,9 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                         th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
                                             "修改日期"
                                         }
+                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                                            "操作"
+                                        }
                                     }
                                 }
                                 tbody { class: "bg-white divide-y divide-gray-200",
@@ -355,6 +457,33 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                                 class: "px-2 py-4 text-sm text-gray-500 truncate",
                                                 title: "{format_date(info.modified)}",
                                                 {format_date(info.modified)}
+                                            }
+                                            td { class: "flex gap-2",
+                                                Button {
+                                                    class: "px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors",
+                                                    onclick: {
+                                                        let path = info.file_path.clone();
+                                                        move |_| open_file(path.clone())
+                                                    },
+                                                    "打开"
+                                                }
+
+                                                // 删除按钮
+                                                Button {
+                                                    class: "px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors",
+                                                    onclick: {
+                                                        let path = info.file_path.clone();
+                                                        move |_| delete_file(path.clone())
+                                                    },
+                                                    "删除"
+                                                }
+
+                                                // 转码占位（后续实现）
+                                                Button {
+                                                    class: "px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded cursor-not-allowed",
+                                                    disabled: true,
+                                                    "转码"
+                                                }
                                             }
                                         }
                                     }
@@ -443,6 +572,7 @@ fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::Erro
         height,
         codec,
         duration,
+        file_path: path, // 保存完整路径
     })
 }
 

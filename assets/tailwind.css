@@ -304,8 +304,8 @@
   .max-w-100 {
     max-width: calc(var(--spacing) * 100);
   }
-  .max-w-\[400px\] {
-    max-width: 400px;
+  .max-w-\[350px\] {
+    max-width: 350px;
   }
   .flex-1 {
     flex: 1;
@@ -315,6 +315,9 @@
   }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
+  }
+  .cursor-not-allowed {
+    cursor: not-allowed;
   }
   .flex-col {
     flex-direction: column;
@@ -393,6 +396,9 @@
   .overflow-y-auto {
     overflow-y: auto;
   }
+  .rounded {
+    border-radius: 0.25rem;
+  }
   .rounded-2xl {
     border-radius: var(--radius-2xl);
   }
@@ -448,6 +454,9 @@
   }
   .bg-gray-200 {
     background-color: var(--color-gray-200);
+  }
+  .bg-gray-300 {
+    background-color: var(--color-gray-300);
   }
   .bg-gray-800\/80 {
     background-color: color-mix(in srgb, oklch(27.8% 0.033 256.848) 80%, transparent);
