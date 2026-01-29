@@ -75,4 +75,13 @@ impl AppConfig {
     pub fn get_last_input_directory(&self) -> Option<PathBuf> {
         self.last_input_directory.clone()
     }
+    /// 设置需要查询的目录
+    pub fn set_query_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.last_input_directory = Some(path);
+        self.save()
+    }
+    /// 获取需要查询的目录，如果未设置，则回退到None
+    pub fn get_query_directory(&self) -> Option<PathBuf> {
+        self.last_input_directory.clone()
+    }
 }

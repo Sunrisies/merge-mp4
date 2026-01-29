@@ -10,6 +10,7 @@ use crate::components::mp4_merger::Mp4Merger;
 use crate::components::tabs::*;
 use crate::config::AppConfig;
 use components::about_footer::AboutFooter;
+use components::mp4_info::Mp4Info;
 use components::toast::ToastProvider;
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -103,6 +104,7 @@ fn Index() -> Element {
                 index: 1usize,
                 class: "tabs-content flex-1",
                 value: "tab2".to_string(),
+                Mp4Info { config }
             }
 
         }

@@ -24,6 +24,7 @@ pub fn Input(
     #[props(extends=input)]
     attributes: Vec<Attribute>,
     children: Element,
+    readonly: Option<bool>,
 ) -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("./style.css") }
@@ -47,6 +48,7 @@ pub fn Input(
             oncopy: move |e| _ = oncopy.map(|callback| callback(e)),
             oncut: move |e| _ = oncut.map(|callback| callback(e)),
             onpaste: move |e| _ = onpaste.map(|callback| callback(e)),
+            readonly,
             ..attributes,
             {children}
         }
