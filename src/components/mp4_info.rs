@@ -4,6 +4,7 @@ use crate::config::AppConfig;
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 use std::path::PathBuf;
+use tokio::sync::mpsc;
 // MP4 文件信息结构
 #[derive(Debug, Clone)]
 pub struct Mp4FileInfo {
@@ -15,6 +16,13 @@ pub struct Mp4FileInfo {
     pub codec: String,    // H.264 / H.265 / HEVC / AV1 等
     pub duration: String, // 秒
 }
+// 进度状态
+#[derive(Debug, Clone, Default)]
+pub struct ScanProgress {
+    pub current: usize,
+    pub total: usize,
+    pub current_file: String,
+}
 
 #[component]
 pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
@@ -23,7 +31,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
-
+    // 新增：进度状态
+    let mut progress: Signal<ScanProgress> = use_signal(ScanProgress::default);
     // 提取核心逻辑为无参闭包，避免重复代码
     let perform_scan = move || {
         let dir = selected_directory.read().clone();
@@ -31,54 +40,70 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             if let Some(directory) = dir {
                 is_loading.set(true);
                 error_message.set(None); // 清除错误
-
-                // 使用 spawn_blocking 执行阻塞操作
-                let result =
-                    tokio::task::spawn_blocking(move || match std::fs::read_dir(&directory) {
-                        Ok(entries) => {
-                            let mp4_files: Vec<Mp4FileInfo> = entries
-                                .filter_map(|entry| {
-                                    let entry = entry.ok()?;
-                                    let path = entry.path();
-
-                                    // 只处理 .mp4 文件
-                                    if !path.is_file() {
-                                        return None;
-                                    }
-                                    if !path
+                progress.set(ScanProgress::default()); // 重置进度
+                // 创建通道用于接收进度更新
+                let (tx, mut rx) = mpsc::channel::<ScanProgress>(100);
+                let tx_for_task = tx.clone();
+                let _ = spawn(async move {
+                    while let Some(progress_update) = rx.recv().await {
+                        progress.set(progress_update);
+                    }
+                });
+                let result = tokio::task::spawn_blocking(move || {
+                    // 先收集所有 MP4 文件路径
+                    let mp4_paths: Vec<PathBuf> = match std::fs::read_dir(&directory) {
+                        Ok(entries) => entries
+                            .filter_map(|entry| entry.ok())
+                            .map(|entry| entry.path())
+                            .filter(|path| {
+                                path.is_file()
+                                    && path
                                         .extension()
                                         .map(|ext| ext.eq_ignore_ascii_case("mp4"))
                                         .unwrap_or(false)
-                                    {
-                                        return None;
-                                    }
+                            })
+                            .collect(),
+                        Err(e) => return Err(e),
+                    };
 
-                                    // 解析 MP4 信息
-                                    match parse_mp4_info(path) {
-                                        Ok(info) => {
-                                            println!("解析到文件信息: {:?}", info);
-                                            Some(info)
-                                        }
-                                        Err(e) => {
-                                            println!("解析文件信息失败: {}", e);
-                                            None
-                                        }
-                                    }
-                                })
-                                .collect();
-                            Ok(mp4_files)
+                    let total = mp4_paths.len();
+                    let mut mp4_files = Vec::with_capacity(total);
+
+                    for (idx, path) in mp4_paths.into_iter().enumerate() {
+                        let file_name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("未知文件")
+                            .to_string();
+
+                        // 创建进度更新
+                        let progress_update = ScanProgress {
+                            current: idx + 1,
+                            total,
+                            current_file: file_name.clone(),
+                        };
+                        let tx_clone = tx_for_task.clone();
+                        let _ = futures::executor::block_on(async {
+                            tx_clone.send(progress_update).await.ok()
+                        });
+                        match parse_mp4_info(path) {
+                            Ok(info) => {
+                                println!("解析到文件信息: {:?}", info);
+                                mp4_files.push(info);
+                            }
+                            Err(e) => {
+                                println!("解析文件信息失败: {} - {}", file_name, e);
+                            }
                         }
-                        Err(e) => Err(e),
-                    })
-                    .await;
+                    }
+
+                    Ok(mp4_files)
+                })
+                .await;
 
                 match result {
                     Ok(Ok(mp4_files)) => {
-                        println!(
-                            "扫描到 {} 个 MP4 文件,文件内容:{:?}",
-                            mp4_files.len(),
-                            mp4_files
-                        );
+                        println!("扫描到 {} 个 MP4 文件", mp4_files.len(),);
                         files.set(mp4_files);
                     }
                     Ok(Err(e)) => {
@@ -118,7 +143,15 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             }
         }
     };
-
+    // 计算进度百分比
+    let progress_percent = {
+        let p = progress.read();
+        if p.total > 0 {
+            (p.current as f32 / p.total as f32 * 100.0) as u32
+        } else {
+            0
+        }
+    };
     rsx! {
         div { class: "flex flex-col space-y-4 p-4 bg-white rounded-lg shadow-md",
             h2 { class: "text-xl font-semibold text-gray-800 mb-2", "MP4 文件信息" }
@@ -161,8 +194,30 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             // 文件列表
             div { class: "mt-4",
                 if is_loading() {
-                    div { class: "flex justify-center p-4",
-                        div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" }
+                    div { class: "mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200",
+                        div { class: "flex justify-between items-center mb-2",
+                            div {
+                                class: "text-sm font-medium text-gray-700 truncate max-w-[400px]",
+                                title: "正在扫描: {progress.read().current_file}",
+                                "正在扫描: {progress.read().current_file}"
+                            }
+
+                            span { class: "text-sm text-gray-500",
+                                "{progress.read().current} / {progress.read().total} ({progress_percent}%)"
+                            }
+                        }
+                        // 进度条背景
+                        div { class: "w-full bg-gray-200 rounded-full h-2.5",
+                            // 进度条填充
+                            div {
+                                class: "bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out",
+                                style: "width: {progress_percent}%",
+                            }
+                        }
+                        // 百分比文字
+                        div { class: "mt-1 text-xs text-center text-gray-500",
+                            "{progress_percent}% 完成"
+                        }
                     }
                 } else if !files.read().is_empty() {
                     div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
@@ -213,7 +268,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                             {info.duration.clone()}
                                         }
                                         td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            // title: "{format_size(file.metadata().and_then(|m| Ok(m.len())).ok())}",
                                             {format_size(Some(info.size))}
                                         }
                                         td {

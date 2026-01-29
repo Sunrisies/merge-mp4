@@ -2789,6 +2789,7 @@ dependencies = [
  "dioxus-desktop",
  "dioxus-primitives",
  "dirs",
+ "futures",
  "futures-util",
  "mp4",
  "regex",
