@@ -3,7 +3,13 @@ use crate::components::input::Input;
 use crate::config::AppConfig;
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tokio::sync::mpsc;
 // MP4 文件信息结构
 #[derive(Debug, Clone)]
@@ -23,7 +29,10 @@ pub struct ScanProgress {
     pub total: usize,
     pub current_file: String,
 }
-
+#[derive(Clone, Copy, PartialEq)]
+enum SortBy {
+    Duration,
+}
 #[component]
 pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut selected_directory: Signal<Option<PathBuf>> =
@@ -31,11 +40,17 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
+    // 3. 添加取消扫描的功能
+    let mut should_cancel = use_signal(|| Arc::new(AtomicBool::new(false)));
     // 新增：进度状态
     let mut progress: Signal<ScanProgress> = use_signal(ScanProgress::default);
+    let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
+    let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
     // 提取核心逻辑为无参闭包，避免重复代码
-    let perform_scan = move || {
+    let mut perform_scan = move || {
         let dir = selected_directory.read().clone();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        should_cancel.set(cancel_flag.clone());
         spawn(async move {
             if let Some(directory) = dir {
                 is_loading.set(true);
@@ -49,6 +64,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         progress.set(progress_update);
                     }
                 });
+                let cancel_flag_for_blocking = cancel_flag.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     // 先收集所有 MP4 文件路径
                     let mp4_paths: Vec<PathBuf> = match std::fs::read_dir(&directory) {
@@ -70,6 +86,11 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     let mut mp4_files = Vec::with_capacity(total);
 
                     for (idx, path) in mp4_paths.into_iter().enumerate() {
+                        // 检查是否取消
+                        if cancel_flag_for_blocking.load(Ordering::SeqCst) {
+                            break;
+                        }
+
                         let file_name = path
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -100,6 +121,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     Ok(mp4_files)
                 })
                 .await;
+                drop(tx);
 
                 match result {
                     Ok(Ok(mp4_files)) => {
@@ -143,6 +165,11 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             }
         }
     };
+    // 5. 添加取消扫描的函数
+    let mut cancel_scan = move || {
+        should_cancel.read().store(true, Ordering::SeqCst);
+        is_loading.set(false);
+    };
     // 计算进度百分比
     let progress_percent = {
         let p = progress.read();
@@ -151,6 +178,40 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         } else {
             0
         }
+    };
+    // 2. 在组件中使用排序函数
+    let handle_sort = {
+        let mut sort_by_clone = sort_by;
+        let mut sort_desc_clone = sort_desc;
+        let mut files_clone = files;
+
+        move |field: SortBy| {
+            let current_field = *sort_by.read();
+            let current_desc = *sort_desc_clone.read();
+
+            if current_field == field {
+                sort_desc_clone.set(!current_desc);
+            } else {
+                sort_by_clone.set(field);
+                // 根据字段设置默认排序方向
+                match field {
+                    SortBy::Duration => sort_desc_clone.set(true), // 时长默认降序
+                }
+            }
+
+            // 获取新的排序参数
+            let new_field = *sort_by_clone.read();
+            let new_desc = *sort_desc_clone.read();
+
+            // 对文件进行排序
+            let mut sorted_files = files_clone.read().clone();
+            sort_mp4_files(&mut sorted_files, new_field, new_desc);
+            files_clone.set(sorted_files);
+        }
+    };
+    let mut sort_by_duration = {
+        let mut handle_sort_clone = handle_sort;
+        move || handle_sort_clone(SortBy::Duration)
     };
     rsx! {
         div { class: "flex flex-col space-y-4 p-4 bg-white rounded-lg shadow-md",
@@ -194,6 +255,11 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             // 文件列表
             div { class: "mt-4",
                 if is_loading() {
+                    Button {
+                        class: "px-6 py-2 ml-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors",
+                        onclick: move |_| cancel_scan(),
+                        "取消扫描"
+                    }
                     div { class: "mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200",
                         div { class: "flex justify-between items-center mb-2",
                             div {
@@ -220,66 +286,83 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         }
                     }
                 } else if !files.read().is_empty() {
-                    div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
-                        table { class: "w-full table-auto divide-y divide-gray-200",
-                            thead { class: "bg-gray-50 sticky top-0 z-10",
-                                tr {
-                                    th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
-                                        "文件名"
-                                    }
-                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
-                                        "分辨率"
-                                    }
-                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
-                                        "编码格式"
-                                    }
-                                    th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
-                                        "时长"
-                                    }
-                                    th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
-                                        "大小"
-                                    }
-                                    th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
-                                        "修改日期"
-                                    }
-                                }
-                            }
-                            tbody { class: "bg-white divide-y divide-gray-200",
-                                for info in files.read().iter() {
+                    div { class: "flex flex-col gap-2",
+                        div { class: "text-sm text-gray-600", "共 {files.len()} 个文件" }
+                        div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
+                            table { class: "w-full table-auto divide-y divide-gray-200",
+                                thead { class: "bg-gray-50 sticky top-0 z-10",
                                     tr {
-                                        td {
-                                            class: "px-2 py-4 text-sm text-gray-900 truncate",
-                                            title: "{info.file_name}",
-                                            {info.file_name.clone()}
+                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
+                                            "文件名"
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            {
-                                                if info.width > 0 && info.height > 0 {
-                                                    format!("{}x{}", info.width, info.height)
+                                        th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                                            "分辨率"
+                                        }
+                                        th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                                            "编码格式"
+                                        }
+                                        th {
+                                            class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap flex",
+                                            onclick: move |_| sort_by_duration(),
+                                            span { "时长" }
+                                            div { class: "ml-1 w-3 h-3",
+                                                if *sort_by.read() == SortBy::Duration {
+                                                    if *sort_desc.read() {
+                                                        span { "↓" }
+                                                    } else {
+                                                        span { "↑" }
+                                                    }
                                                 } else {
-                                                    "未知".to_string()
+                                                    span { class: "text-gray-300", "↕" }
                                                 }
                                             }
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            {info.codec.clone()}
+                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                                            "大小"
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            {info.duration.clone()}
-                                        }
-                                        td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                            {format_size(Some(info.size))}
-                                        }
-                                        td {
-                                            class: "px-2 py-4 text-sm text-gray-500 truncate",
-                                            title: "{format_date(info.modified)}",
-                                            {format_date(info.modified)}
+                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                                            "修改日期"
                                         }
                                     }
                                 }
+                                tbody { class: "bg-white divide-y divide-gray-200",
+                                    for info in files.read().iter() {
+                                        tr {
+                                            td {
+                                                class: "px-2 py-4 text-sm text-gray-900 truncate",
+                                                title: "{info.file_name}",
+                                                {info.file_name.clone()}
+                                            }
+                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                                {
+                                                    if info.width > 0 && info.height > 0 {
+                                                        format!("{}x{}", info.width, info.height)
+                                                    } else {
+                                                        "未知".to_string()
+                                                    }
+                                                }
+                                            }
+                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                                {info.codec.clone()}
+                                            }
+                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                                {info.duration.clone()}
+                                            }
+                                            td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                                {format_size(Some(info.size))}
+                                            }
+                                            td {
+                                                class: "px-2 py-4 text-sm text-gray-500 truncate",
+                                                title: "{format_date(info.modified)}",
+                                                {format_date(info.modified)}
+                                            }
+                                        }
+                                    }
 
+                                }
                             }
                         }
+
                     }
                 } else if selected_directory.read().is_some() && !is_loading() {
                     div { class: "text-center p-8 text-gray-500", "该目录下没有找到MP4文件" }
@@ -373,5 +456,46 @@ fn format_duration(seconds: f64) -> String {
         format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     } else {
         format!("{:02}:{:02}", minutes, seconds)
+    }
+}
+
+// 排序函数
+// 1. 添加排序函数
+fn sort_mp4_files(files: &mut [Mp4FileInfo], field: SortBy, desc: bool) {
+    match field {
+        SortBy::Duration => {
+            files.sort_by(|a, b| {
+                // 需要解析时长字符串为秒数进行比较
+                let a_secs = parse_duration_to_seconds(&a.duration);
+                let b_secs = parse_duration_to_seconds(&b.duration);
+                a_secs
+                    .partial_cmp(&b_secs)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+    }
+
+    if desc {
+        files.reverse();
+    }
+}
+// 将时长字符串转换为秒数
+fn parse_duration_to_seconds(duration: &str) -> u32 {
+    let parts: Vec<&str> = duration.split(':').collect();
+    match parts.len() {
+        3 => {
+            // HH:MM:SS
+            let hours: u32 = parts[0].parse().unwrap_or(0);
+            let minutes: u32 = parts[1].parse().unwrap_or(0);
+            let seconds: u32 = parts[2].parse().unwrap_or(0);
+            hours * 3600 + minutes * 60 + seconds
+        }
+        2 => {
+            // MM:SS
+            let minutes: u32 = parts[0].parse().unwrap_or(0);
+            let seconds: u32 = parts[1].parse().unwrap_or(0);
+            minutes * 60 + seconds
+        }
+        _ => 0,
     }
 }
