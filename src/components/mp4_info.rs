@@ -1,5 +1,6 @@
 use crate::components::button::Button;
 use crate::config::AppConfig;
+use crate::utils::{format_duration, parse_duration_to_seconds};
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 use std::collections::HashSet;
@@ -800,19 +801,6 @@ fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::Erro
     })
 }
 
-fn format_duration(seconds: f64) -> String {
-    let total_seconds = seconds.round() as u32;
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    let seconds = total_seconds % 60;
-
-    if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
-    } else {
-        format!("{:02}:{:02}", minutes, seconds)
-    }
-}
-
 // 排序函数
 // 1. 添加排序函数
 fn sort_mp4_files(files: &mut [Mp4FileInfo], field: SortBy, desc: bool) {
@@ -831,25 +819,5 @@ fn sort_mp4_files(files: &mut [Mp4FileInfo], field: SortBy, desc: bool) {
 
     if desc {
         files.reverse();
-    }
-}
-// 将时长字符串转换为秒数
-fn parse_duration_to_seconds(duration: &str) -> u32 {
-    let parts: Vec<&str> = duration.split(':').collect();
-    match parts.len() {
-        3 => {
-            // HH:MM:SS
-            let hours: u32 = parts[0].parse().unwrap_or(0);
-            let minutes: u32 = parts[1].parse().unwrap_or(0);
-            let seconds: u32 = parts[2].parse().unwrap_or(0);
-            hours * 3600 + minutes * 60 + seconds
-        }
-        2 => {
-            // MM:SS
-            let minutes: u32 = parts[0].parse().unwrap_or(0);
-            let seconds: u32 = parts[1].parse().unwrap_or(0);
-            minutes * 60 + seconds
-        }
-        _ => 0,
     }
 }

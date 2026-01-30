@@ -6,6 +6,7 @@ use dioxus_desktop::{LogicalPosition, LogicalSize};
 mod components;
 mod config;
 mod ffmpeg;
+mod utils;
 use crate::components::mp4_merger::Mp4Merger;
 use crate::components::tabs::*;
 use crate::config::AppConfig;
