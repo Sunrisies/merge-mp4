@@ -25,7 +25,7 @@ enum MergeEvent {
     Success(String),
 }
 fn main() {
-    let window_width = 600.0;
+    let window_width = 900.0;
     let window_height = 700.0;
     let event_loop = EventLoop::new();
     let monitor = event_loop.primary_monitor().unwrap();

@@ -1,4 +1,4 @@
-use crate::components::button::Button;
+use crate::components::button::{Button, ButtonVariant};
 use crate::config::AppConfig;
 use crate::utils::{format_duration, parse_duration_to_seconds};
 use chrono::{DateTime, Local};
@@ -375,9 +375,9 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
 
     rsx! {
         div { class: "flex flex-col h-full p-2",
-            div { class: "flex-1 flex flex-col bg-white rounded-2xl shadow-xl overflow-hidden",
+            div { class: "flex flex-col  overflow-hidden",
                 // 顶部操作区域
-                div { class: "border-b border-gray-200",
+                div {
                     // 错误消息
                     if let Some(error) = error_message.read().as_ref() {
                         div { class: "mb-4 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 animate-pulse",
@@ -390,79 +390,57 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     }
                 }
                 // 输出目录选择
-                div { class: "mb-4",
-
-                    div { class: "flex flex-col sm:flex-row gap-3",
-                        div { class: "flex-1",
-                            div { class: "flex items-center gap-3 p-3 sm:p-4 bg-gray-50 border border-gray-300 rounded-xl",
-                                span { class: "text-gray-400 text-lg", "📂" }
-                                div { class: "flex-1 min-w-0",
-                                    p { class: "text-sm sm:text-base text-gray-800 truncate",
-                                        {
-                                            selected_directory
-                                                .read()
-                                                .as_ref()
-                                                .map(|p| p.display().to_string())
-                                                .unwrap_or_else(|| "未选择目录".to_string())
-                                        }
-                                    }
-                                    p { class: "text-xs text-gray-500 mt-1",
-                                        if selected_directory.read().is_some() {
-                                            "点击右侧按钮可以更改目录"
-                                        } else {
-                                            "请先选择输出目录"
-                                        }
-                                    }
+                div { class: "flex sm:flex-row gap-3",
+                    div { class: "flex-1 flex items-center gap-3 p-2 border border-black-300 rounded-xl ",
+                        span { class: "text-gray-400 text-lg", "📂" }
+                        div { class: "flex-1 min-w-0",
+                            p { class: "text-sm sm:text-base text-gray-800 truncate",
+                                {
+                                    selected_directory
+                                        .read()
+                                        .as_ref()
+                                        .map(|p| p.display().to_string())
+                                        .unwrap_or_else(|| "未选择目录".to_string())
                                 }
                             }
-                        }
-                        Button {
-                            class: "px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 min-w-[140px]",
-                            onclick: select_output_directory,
-                            disabled: is_loading(),
-                            span { class: "text-lg", "📁" }
-                            "选择目录"
+                            p { class: "text-xs text-gray-500 mt-1",
+                                if selected_directory.read().is_some() {
+                                    "点击右侧按钮可以更改目录"
+                                } else {
+                                    "请先选择输出目录"
+                                }
+                            }
                         }
                     }
+                    Button {
+                        class: "bg-gradient-to-r from-blue-600 px-2 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2",
+                        onclick: select_output_directory,
+                        disabled: is_loading(),
+                        "选择目录"
+                    }
                     // 扫描按钮
-                    div { class: "flex justify-end",
-                        Button {
-                            class: "px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none flex items-center gap-2",
-                            disabled: selected_directory.read().is_none() || is_loading(),
-                            onclick: on_scan_click,
-                            span { class: "text-lg",
-                                if is_loading() {
-                                    "🔄"
-                                } else {
-                                    "🔍"
-                                }
-                            }
-                            if is_loading() {
-                                "扫描中..."
-                            } else {
-                                "扫描目录"
-                            }
+                    Button {
+                        class: "bg-gradient-to-r from-green-600 px-2 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none flex items-center gap-2",
+                        disabled: selected_directory.read().is_none() || is_loading(),
+                        onclick: on_scan_click,
+
+                        if is_loading() {
+                            "扫描中..."
+                        } else {
+                            "扫描目录"
                         }
                     }
 
                 }
+
             }
 
             // 文件列表
-            div { class: "mt-4",
+            div { class: "mt-4 h-[calc(100%-60px)]",
                 if is_loading() {
                     // 加载状态
                     div { class: "flex-1 flex flex-col items-center justify-center p-8",
                         div { class: "w-full max-w-md",
-                            // 取消按钮
-                            div { class: "flex justify-end mb-6",
-                                Button {
-                                    class: "px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium rounded-lg shadow hover:shadow-md transition-all duration-300 flex items-center gap-2",
-                                    onclick: move |_| cancel_scan(),
-                                    span { "✕" }
-                                    "取消扫描"
-                                }
-                            }
 
                             // 进度显示
                             div { class: "bg-white rounded-2xl shadow-lg p-6 border border-gray-200",
@@ -500,14 +478,21 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
 
                                 // 文件进度
                                 div { class: "mt-6 pt-6 border-t border-gray-200",
-                                    div { class: "grid grid-cols-2 gap-4",
-                                        div {
+                                    div { class: "grid grid-cols-3 gap-2",
+                                        div { class: "text-center",
                                             p { class: "text-xs text-gray-500", "已处理文件" }
                                             p { class: "text-lg font-semibold text-gray-800",
                                                 "{progress.read().current}"
                                             }
                                         }
-                                        div {
+                                        // 取消按钮
+                                        Button {
+                                            onclick: move |_| cancel_scan(),
+                                            variant: ButtonVariant::Destructive,
+                                            span { "✕" }
+                                            "取消扫描"
+                                        }
+                                        div { class: "text-center",
                                             p { class: "text-xs text-gray-500", "剩余文件" }
                                             p { class: "text-lg font-semibold text-gray-800",
                                                 "{progress.read().total.saturating_sub(progress.read().current)}"
@@ -519,7 +504,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         }
                     }
                 } else if !files.read().is_empty() {
-                    div { class: "flex flex-col gap-2",
+                    div { class: "grid grid-rows-[auto_1fr_auto] gap-2  overflow-hidden",
                         // 顶部统计和分页控制
                         div { class: "flex justify-between items-center text-sm text-gray-600",
                             span { "共 {files.len()} 个文件" }
@@ -558,8 +543,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                 span { "条" }
                             }
                         }
-                        div { class: "border border-gray-200 rounded-md  h-[300px] overflow-auto",
-                            table { class: "w-full table-auto divide-y divide-gray-200",
+                        div { class: "border border-gray-200 rounded-md overflow-auto h-[380]",
+                            table { class: "w-full table-auto divide-y divide-gray-200 min-w-max",
                                 thead { class: "bg-gray-50 sticky top-0 z-10",
                                     tr {
                                         th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
