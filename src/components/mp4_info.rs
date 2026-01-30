@@ -1,5 +1,4 @@
 use crate::components::button::Button;
-use crate::components::input::Input;
 use crate::config::AppConfig;
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
@@ -374,75 +373,148 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     };
 
     rsx! {
-        div { class: "flex flex-col space-y-4 p-4 bg-white rounded-lg shadow-md",
-            h2 { class: "text-xl font-semibold text-gray-800 mb-2", "MP4 文件信息" }
-
-            // 错误消息显示
-            if let Some(error) = error_message.read().as_ref() {
-                div { class: "p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg",
-                    {error.to_string()}
-                }
-            }
-
-            // 输出目录选择
-            div { class: "flex flex-col space-y-2",
-                label { class: "text-sm font-medium text-gray-700", "输出目录" }
-                div { class: "flex space-x-2",
-                    Input {
-                        class: "flex-1 px-4 py-2 border border-gray-300 rounded-md bg-gray-50",
-                        value: "{selected_directory.read().as_ref().map(|p| p.display().to_string()).unwrap_or_default()}",
-                        readonly: true,
-                        placeholder: "未选择目录",
-                    }
-                    Button {
-                        class: "px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors",
-                        onclick: select_output_directory,
-                        "选择目录"
+        div { class: "flex flex-col h-full p-2",
+            div { class: "flex-1 flex flex-col bg-white rounded-2xl shadow-xl overflow-hidden",
+                // 顶部操作区域
+                div { class: "border-b border-gray-200",
+                    // 错误消息
+                    if let Some(error) = error_message.read().as_ref() {
+                        div { class: "mb-4 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 animate-pulse",
+                            div { class: "text-red-500 text-xl", "⚠️" }
+                            div { class: "flex-1",
+                                p { class: "font-medium text-red-800", "操作失败" }
+                                p { class: "text-sm text-red-600 mt-1", {error.to_string()} }
+                            }
+                        }
                     }
                 }
-            }
+                // 输出目录选择
+                div { class: "mb-4",
 
-            // 扫描按钮 - 使用正确的事件处理器签名
-            div { class: "flex justify-end",
-                Button {
-                    class: "px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                    disabled: selected_directory.read().is_none() || is_loading(),
-                    onclick: on_scan_click, // 修复：使用接收 Event 的闭包
-                    "扫描目录"
+                    div { class: "flex flex-col sm:flex-row gap-3",
+                        div { class: "flex-1",
+                            div { class: "flex items-center gap-3 p-3 sm:p-4 bg-gray-50 border border-gray-300 rounded-xl",
+                                span { class: "text-gray-400 text-lg", "📂" }
+                                div { class: "flex-1 min-w-0",
+                                    p { class: "text-sm sm:text-base text-gray-800 truncate",
+                                        {
+                                            selected_directory
+                                                .read()
+                                                .as_ref()
+                                                .map(|p| p.display().to_string())
+                                                .unwrap_or_else(|| "未选择目录".to_string())
+                                        }
+                                    }
+                                    p { class: "text-xs text-gray-500 mt-1",
+                                        if selected_directory.read().is_some() {
+                                            "点击右侧按钮可以更改目录"
+                                        } else {
+                                            "请先选择输出目录"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Button {
+                            class: "px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 min-w-[140px]",
+                            onclick: select_output_directory,
+                            disabled: is_loading(),
+                            span { class: "text-lg", "📁" }
+                            "选择目录"
+                        }
+                    }
+                    // 扫描按钮
+                    div { class: "flex justify-end",
+                        Button {
+                            class: "px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none flex items-center gap-2",
+                            disabled: selected_directory.read().is_none() || is_loading(),
+                            onclick: on_scan_click,
+                            span { class: "text-lg",
+                                if is_loading() {
+                                    "🔄"
+                                } else {
+                                    "🔍"
+                                }
+                            }
+                            if is_loading() {
+                                "扫描中..."
+                            } else {
+                                "扫描目录"
+                            }
+                        }
+                    }
+
                 }
             }
 
             // 文件列表
             div { class: "mt-4",
                 if is_loading() {
-                    Button {
-                        class: "px-6 py-2 ml-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors",
-                        onclick: move |_| cancel_scan(),
-                        "取消扫描"
-                    }
-                    div { class: "mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200",
-                        div { class: "flex justify-between items-center mb-2",
-                            div {
-                                class: "text-sm font-medium text-gray-700 truncate max-w-[350px]",
-                                title: "正在扫描: {progress.read().current_file}",
-                                "正在扫描: {progress.read().current_file}"
+                    // 加载状态
+                    div { class: "flex-1 flex flex-col items-center justify-center p-8",
+                        div { class: "w-full max-w-md",
+                            // 取消按钮
+                            div { class: "flex justify-end mb-6",
+                                Button {
+                                    class: "px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium rounded-lg shadow hover:shadow-md transition-all duration-300 flex items-center gap-2",
+                                    onclick: move |_| cancel_scan(),
+                                    span { "✕" }
+                                    "取消扫描"
+                                }
                             }
 
-                            span { class: "text-sm text-gray-500",
-                                "{progress.read().current} / {progress.read().total} ({progress_percent}%)"
+                            // 进度显示
+                            div { class: "bg-white rounded-2xl shadow-lg p-6 border border-gray-200",
+                                div { class: "flex justify-between items-center mb-6",
+                                    div { class: "flex-1",
+                                        h3 { class: "text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2",
+                                            span { class: "text-blue-500 animate-spin",
+                                                "🔄"
+                                            }
+                                            "正在扫描文件..."
+                                        }
+                                        p {
+                                            class: "text-sm text-gray-600 truncate w-[300px]",
+                                            title: "正在扫描: {progress.read().current_file}",
+                                            "正在扫描: {progress.read().current_file}"
+                                        }
+                                    }
+                                    div { class: "text-right",
+                                        p { class: "text-2xl font-bold text-blue-600",
+                                            "{progress_percent}%"
+                                        }
+                                        p { class: "text-sm text-gray-500 mt-1",
+                                            "{progress.read().current} / {progress.read().total} 文件"
+                                        }
+                                    }
+                                }
+
+                                // 进度条
+                                div { class: "relative h-4 bg-gray-200 rounded-full overflow-hidden",
+                                    div {
+                                        class: "absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out shadow-inner",
+                                        style: "width: {progress_percent}%",
+                                    }
+                                }
+
+                                // 文件进度
+                                div { class: "mt-6 pt-6 border-t border-gray-200",
+                                    div { class: "grid grid-cols-2 gap-4",
+                                        div {
+                                            p { class: "text-xs text-gray-500", "已处理文件" }
+                                            p { class: "text-lg font-semibold text-gray-800",
+                                                "{progress.read().current}"
+                                            }
+                                        }
+                                        div {
+                                            p { class: "text-xs text-gray-500", "剩余文件" }
+                                            p { class: "text-lg font-semibold text-gray-800",
+                                                "{progress.read().total.saturating_sub(progress.read().current)}"
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                        }
-                        // 进度条背景
-                        div { class: "w-full bg-gray-200 rounded-full h-2.5",
-                            // 进度条填充
-                            div {
-                                class: "bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out",
-                                style: "width: {progress_percent}%",
-                            }
-                        }
-                        // 百分比文字
-                        div { class: "mt-1 text-xs text-center text-gray-500",
-                            "{progress_percent}% 完成"
                         }
                     }
                 } else if !files.read().is_empty() {
@@ -520,7 +592,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                         th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
                                             "修改日期"
                                         }
-                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                                        th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-64",
                                             "操作"
                                         }
                                     }

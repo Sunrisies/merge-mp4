@@ -202,9 +202,6 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
     rsx! {
         div { class: " flex-1",
             div { class: "max-w-2xl mx-auto pt-2 overflow-y-auto",
-                // 主要内容卡片
-                div { class: "bg-gray-800/80 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-700 overflow-hidden" }
-
                 // 文件选择区域
                 div { class: "p-6 pt-2 border-b border-gray-700",
                     div { class: "flex items-center justify-between",

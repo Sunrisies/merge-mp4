@@ -88,12 +88,15 @@ fn Index() -> Element {
     println!("config{:?}", config);
     rsx! {
 
-        Tabs { default_value: "tab1".to_string(), horizontal: true,
+        Tabs {
+            default_value: "tab1".to_string(),
+            horizontal: true,
+            class: "h-full",
             TabList {
                 TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
                 TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
             }
-            TabContent { index: 0usize, value: "tab1".to_string(), class: "flex-1",
+            TabContent { index: 0usize, value: "tab1".to_string(), class: "flex-1 ",
 
                 ToastProvider {
                     Mp4Merger { config }
