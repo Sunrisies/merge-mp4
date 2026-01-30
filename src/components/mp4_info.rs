@@ -4,6 +4,7 @@ use crate::utils::{format_duration, parse_duration_to_seconds};
 use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 use std::collections::HashSet;
+use std::ops::{AddAssign, SubAssign};
 use std::time::Instant;
 use std::{
     path::PathBuf,
@@ -51,7 +52,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut progress: Signal<ScanProgress> = use_signal(ScanProgress::default);
     let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
     let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
-    let deleting_files: Signal<HashSet<PathBuf>> = use_signal(Default::default); // 新增：跟踪正在删除的文件
+    let mut deleting_files: Signal<HashSet<PathBuf>> = use_signal(Default::default); // 新增：跟踪正在删除的文件
     // 分页状态
     let mut current_page: Signal<usize> = use_signal(|| 1); // 从1开始
     let mut page_size: Signal<usize> = use_signal(|| 20); // 默认每页20条
@@ -269,9 +270,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
 
     // 删除文件（带确认对话框）
     let delete_file = {
-        // let files = files.clone();
-        // let error_message = error_message.clone();
-        // let deleting_files = deleting_files.clone();
         move |path: PathBuf| {
             let path_for_operations = path.clone();
             let mut files = files;
@@ -351,25 +349,35 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         }
     };
     // 分页控制函数
-    let mut go_to_page = move |page: usize| {
-        let total = total_pages;
-        if page >= 1 && page <= total {
+    let mut go_to_page = {
+        move |page: usize| {
+            let page = page.max(1).min(total_pages);
             current_page.set(page);
+            // 切换页面时清空选择
+            selected_files.write().clear();
+            select_all_page.set(false);
         }
     };
 
-    let mut go_prev = move || {
-        let current = *current_page.read();
-        if current > 1 {
-            current_page.set(current - 1);
+    let mut go_prev = {
+        move || {
+            if *current_page.read() > 1 {
+                current_page.write().sub_assign(1);
+                // 切换页面时清空选择
+                selected_files.write().clear();
+                select_all_page.set(false);
+            }
         }
     };
 
-    let mut go_next = move || {
-        let current = *current_page.read();
-        let total = total_pages;
-        if current < total {
-            current_page.set(current + 1);
+    let mut go_next = {
+        move || {
+            if *current_page.read() < total_pages {
+                current_page.write().add_assign(1);
+                // 切换页面时清空选择
+                selected_files.write().clear();
+                select_all_page.set(false);
+            }
         }
     };
 
@@ -380,7 +388,100 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             current_page.set(1); // 切换每页数量时回到第一页
         }
     };
+    // 批量删除函数
+    let mut batch_delete = {
+        move || {
+            let selected = selected_files.read().clone();
+            if selected.is_empty() {
+                error_message.set(Some("请先选择要删除的文件".to_string()));
+                return;
+            }
 
+            spawn(async move {
+                // 显示确认对话框
+                let result = rfd::AsyncMessageDialog::new()
+                    .set_title("确认批量删除")
+                    .set_description(format!(
+                        "确定要永久删除选中的 {} 个文件吗？\n此操作不可撤销。",
+                        selected.len()
+                    ))
+                    .set_buttons(rfd::MessageButtons::OkCancel)
+                    .show()
+                    .await;
+
+                if result == rfd::MessageDialogResult::Ok {
+                    // 开始时间
+                    let start = Instant::now();
+
+                    // 添加到删除集合
+                    for path in &selected {
+                        deleting_files.write().insert(path.clone());
+                    }
+
+                    let mut success_count = 0;
+                    let mut failed_files = Vec::new();
+
+                    // 逐个删除文件
+                    for path in &selected {
+                        let delete_result = tokio::task::spawn_blocking({
+                            let path = path.clone();
+                            move || std::fs::remove_file(&path)
+                        })
+                        .await;
+
+                        match delete_result {
+                            Ok(Ok(_)) => {
+                                success_count += 1;
+                            }
+                            Ok(Err(e)) => {
+                                failed_files.push((path.display().to_string(), e.to_string()));
+                            }
+                            Err(e) => {
+                                failed_files.push((path.display().to_string(), e.to_string()));
+                            }
+                        }
+                    }
+
+                    // 从列表中移除已删除的文件
+                    if success_count > 0 {
+                        let mut files_guard = files.write();
+                        files_guard.retain(|f| !selected.contains(&f.file_path));
+                    }
+
+                    // 显示结果
+                    if !failed_files.is_empty() {
+                        let error_list = failed_files
+                            .iter()
+                            .map(|(file, err)| format!("{}: {}", file, err))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        error_message.set(Some(format!(
+                            "成功删除 {} 个文件，失败 {} 个：\n{}",
+                            success_count,
+                            failed_files.len(),
+                            error_list
+                        )));
+                    } else {
+                        error_message.set(Some(format!(
+                            "成功删除 {} 个文件，耗时 {:.2} 秒",
+                            success_count,
+                            start.elapsed().as_secs_f32()
+                        )));
+                    }
+
+                    // 清空选择
+                    selected_files.write().clear();
+                    select_all_page.set(false);
+
+                    // 从删除集合中移除
+                    for path in &selected {
+                        deleting_files.write().remove(path);
+                    }
+                }
+            });
+        }
+    };
     rsx! {
         div { class: "flex flex-col h-full p-2",
             div { class: "flex flex-col  overflow-hidden",
@@ -520,8 +621,9 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                             div { class: "flex items-center gap-4",
                                 // 批量删除按钮（当有选中文件时显示）
                                 if !selected_files.read().is_empty() {
-                                    Button { class: "px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-2",
-                                        // onclick: move |_| batch_delete(),
+                                    Button {
+                                        class: "px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-2",
+                                        onclick: move |_| batch_delete(),
                                         svg {
                                             class: "w-4 h-4",
                                             fill: "currentColor",
@@ -594,32 +696,32 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                 thead { class: "bg-gray-50 sticky top-0 z-10",
                                     tr {
                                         // 全选复选框
-                                        // th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10",
-                                        //     input {
-                                        //         r#type: "checkbox",
-                                        //         class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
-                                        //         checked: select_all_page(),
-                                        //         onchange: move |evt| {
-                                        //             let is_checked = evt.value().parse::<bool>().unwrap_or(false);
-                                        //             select_all_page.set(is_checked);
+                                        th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
+                                                checked: select_all_page(),
+                                                onchange: move |evt| {
+                                                    let is_checked = evt.value().parse::<bool>().unwrap_or(false);
+                                                    select_all_page.set(is_checked);
 
-                                        //             let current_files: Vec<PathBuf> = paginated_files
-                                        //                 .iter()
-                                        //                 .map(|f| f.file_path.clone())
-                                        //                 .collect();
-                                        //             let mut selected = selected_files.write();
-                                        //             if is_checked {
-                                        //                 for path in current_files {
-                                        //                     selected.insert(path);
-                                        //                 }
-                                        //             } else {
-                                        //                 for path in current_files {
-                                        //                     selected.remove(&path);
-                                        //                 }
-                                        //             }
-                                        //         },
-                                        //     }
-                                        // }
+                                                    let current_files: Vec<PathBuf> = paginated_files
+                                                        .iter()
+                                                        .map(|f| f.file_path.clone())
+                                                        .collect();
+                                                    let mut selected = selected_files.write();
+                                                    if is_checked {
+                                                        for path in current_files {
+                                                            selected.insert(path);
+                                                        }
+                                                    } else {
+                                                        for path in current_files {
+                                                            selected.remove(&path);
+                                                        }
+                                                    }
+                                                },
+                                            }
+                                        }
                                         // 序号列
                                         th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-12",
                                             "序号"
@@ -664,30 +766,34 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                     for (index , info) in paginated_files.iter().enumerate() {
                                         {
                                             let info_clone = info.clone();
+                                            let file_path = info.file_path.clone();
+                                            let is_selected = selected_files.read().contains(&file_path);
                                             rsx! {
                                                 tr { class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50" } else { "" },
                                                     // 单行复选框
-                                                    // td { class: "px-2 py-4",
-                                                    //     Checkbox { name: "tos-check", aria_label: "Demo Checkbox" }
+                                                    td { class: "px-2 py-4",
+                                                        input {
+                                                            r#type: "checkbox",
+                                                            class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
+                                                            checked: is_selected,
+                                                            onclick: {
+                                                                let path = file_path.clone();
+                                                                let mut selected = selected_files;
+                                                                let mut select_all_page = select_all_page;
 
-                                                    // // input {
-                                                    // //     r#type: "checkbox",
-                                                    // //     class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
-                                                    // //     checked: selected_files.read().contains(&info.file_path),
-                                                    // //     onchange: move |evt| {
-                                                    // //         let is_checked = evt.value().parse::<bool>().unwrap_or(false);
-                                                    // //         let mut selected = selected_files.write();
-                                                    // //         let path = info.file_path.clone();
-                                                    // //         // if is_checked {
-                                                    // //         //     selected.insert(path.to_path_buf());
-                                                    // //         // } else {
-                                                    // //         //     selected.remove(&path.to_path_buf());
-                                                    // //         //     // 如果取消单个选择，同时取消全选状态
-                                                    // //         //     select_all_page.set(false);
-                                                    // //         // }
-                                                    // //     },
-                                                    // // }
-                                                    // }
+                                                                move |_| {
+                                                                    let mut selected_guard = selected.write();
+                                                                    if selected_guard.contains(&path) {
+                                                                        selected_guard.remove(&path);
+                                                                        select_all_page.set(false);
+                                                                    } else {
+                                                                        selected_guard.insert(path.clone());
+                                                                    }
+                                                                }
+                                                            },
+
+                                                        }
+                                                    }
                                                     // 序号（计算当前页的序号）
                                                     td { class: "px-2 py-4 text-sm text-gray-500 text-center",
                                                         {format!("{}", (current_page() - 1) * page_size() + index + 1)}
