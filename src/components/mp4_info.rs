@@ -41,6 +41,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut selected_directory: Signal<Option<PathBuf>> =
         use_signal(|| config.read().get_query_directory());
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
+    let mut paginated_files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
+
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     // 3. 添加取消扫描的功能
@@ -53,6 +55,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     // 分页状态
     let mut current_page: Signal<usize> = use_signal(|| 1); // 从1开始
     let mut page_size: Signal<usize> = use_signal(|| 20); // 默认每页20条
+    let mut selected_files: Signal<HashSet<PathBuf>> = use_signal(Default::default);
+    let mut select_all_page: Signal<bool> = use_signal(|| false);
     let total_pages = {
         let files_len = files.read().len();
         let size = *page_size.read();
@@ -60,14 +64,18 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     };
 
     // 计算当前页的文件切片
-    let paginated_files = {
+    let mut update_paginated_files = move || {
         let all_files = files.read();
         let page = *current_page.read();
         let size = *page_size.read();
         let start = (page - 1) * size;
         let end = (start + size).min(all_files.len());
-        all_files[start..end].to_vec()
+        paginated_files.set(all_files[start..end].to_vec());
     };
+    // 使用use_effect在相关状态变化时更新
+    use_effect(move || {
+        update_paginated_files();
+    });
     // 提取核心逻辑为无参闭包，避免重复代码
     let mut perform_scan = move || {
         // 开始时间
@@ -506,17 +514,54 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 } else if !files.read().is_empty() {
                     div { class: "grid grid-rows-[auto_1fr_auto] gap-2  overflow-hidden",
                         // 顶部统计和分页控制
-                        div { class: "flex justify-between items-center text-sm text-gray-600",
-                            span { "共 {files.len()} 个文件" }
+                        // 顶部统计、批量操作和分页控制
+                        div { class: "flex justify-between items-center",
+                            // 左侧：批量操作按钮
+                            div { class: "flex items-center gap-4",
+                                // 批量删除按钮（当有选中文件时显示）
+                                if !selected_files.read().is_empty() {
+                                    Button { class: "px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-2",
+                                        // onclick: move |_| batch_delete(),
+                                        svg {
+                                            class: "w-4 h-4",
+                                            fill: "currentColor",
+                                            view_box: "0 0 20 20",
+                                            path {
+                                                fill_rule: "evenodd",
+                                                d: "M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z",
+                                                clip_rule: "evenodd",
+                                            }
+                                        }
+                                        "批量删除 ({selected_files.read().len()})"
+                                    }
+                                } else {
+                                    div { class: "text-sm text-gray-500",
+                                        "选择文件进行批量操作"
+                                    }
+                                }
+                            }
 
-                            // 每页数量选择
+                            // 中间：统计信息
+                            div { class: "text-sm text-gray-600",
+                                span { "共 {files.len()} 个文件" }
+                                if !selected_files.read().is_empty() {
+                                    span { class: "ml-2 text-blue-600",
+                                        "已选择 {selected_files.read().len()} 个"
+                                    }
+                                }
+                            }
+
+                            // 右侧：每页数量选择
                             div { class: "flex items-center gap-2",
-                                span { "每页" }
+                                span { class: "text-sm text-gray-600", "每页" }
                                 select {
                                     class: "border rounded px-2 py-1 text-sm bg-white",
                                     onchange: move |evt| {
                                         if let Ok(size) = evt.value().parse::<usize>() {
                                             set_page_size(size);
+                                            // 重置选择状态
+                                            selected_files.write().clear();
+                                            select_all_page.set(false);
                                         }
                                     },
                                     option {
@@ -540,13 +585,45 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                         "100"
                                     }
                                 }
-                                span { "条" }
+                                span { class: "text-sm text-gray-600", "条" }
                             }
                         }
+
                         div { class: "border border-gray-200 rounded-md overflow-auto h-[380]",
                             table { class: "w-full table-auto divide-y divide-gray-200 min-w-max",
                                 thead { class: "bg-gray-50 sticky top-0 z-10",
                                     tr {
+                                        // 全选复选框
+                                        // th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10",
+                                        //     input {
+                                        //         r#type: "checkbox",
+                                        //         class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
+                                        //         checked: select_all_page(),
+                                        //         onchange: move |evt| {
+                                        //             let is_checked = evt.value().parse::<bool>().unwrap_or(false);
+                                        //             select_all_page.set(is_checked);
+
+                                        //             let current_files: Vec<PathBuf> = paginated_files
+                                        //                 .iter()
+                                        //                 .map(|f| f.file_path.clone())
+                                        //                 .collect();
+                                        //             let mut selected = selected_files.write();
+                                        //             if is_checked {
+                                        //                 for path in current_files {
+                                        //                     selected.insert(path);
+                                        //                 }
+                                        //             } else {
+                                        //                 for path in current_files {
+                                        //                     selected.remove(&path);
+                                        //                 }
+                                        //             }
+                                        //         },
+                                        //     }
+                                        // }
+                                        // 序号列
+                                        th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-12",
+                                            "序号"
+                                        }
                                         th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
                                             "文件名"
                                         }
@@ -584,61 +661,86 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                                     }
                                 }
                                 tbody { class: "bg-white divide-y divide-gray-200",
-                                    for info in paginated_files.iter() {
-                                        tr {
-                                            td {
-                                                class: "px-2 py-4 text-sm text-gray-900 truncate",
-                                                title: "{info.file_name}",
-                                                {info.file_name.clone()}
-                                            }
-                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                                {
-                                                    if info.width > 0 && info.height > 0 {
-                                                        format!("{}x{}", info.width, info.height)
-                                                    } else {
-                                                        "未知".to_string()
+                                    for (index , info) in paginated_files.iter().enumerate() {
+                                        {
+                                            let info_clone = info.clone();
+                                            rsx! {
+                                                tr { class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50" } else { "" },
+                                                    // 单行复选框
+                                                    // td { class: "px-2 py-4",
+                                                    //     Checkbox { name: "tos-check", aria_label: "Demo Checkbox" }
+
+                                                    // // input {
+                                                    // //     r#type: "checkbox",
+                                                    // //     class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
+                                                    // //     checked: selected_files.read().contains(&info.file_path),
+                                                    // //     onchange: move |evt| {
+                                                    // //         let is_checked = evt.value().parse::<bool>().unwrap_or(false);
+                                                    // //         let mut selected = selected_files.write();
+                                                    // //         let path = info.file_path.clone();
+                                                    // //         // if is_checked {
+                                                    // //         //     selected.insert(path.to_path_buf());
+                                                    // //         // } else {
+                                                    // //         //     selected.remove(&path.to_path_buf());
+                                                    // //         //     // 如果取消单个选择，同时取消全选状态
+                                                    // //         //     select_all_page.set(false);
+                                                    // //         // }
+                                                    // //     },
+                                                    // // }
+                                                    // }
+                                                    // 序号（计算当前页的序号）
+                                                    td { class: "px-2 py-4 text-sm text-gray-500 text-center",
+                                                        {format!("{}", (current_page() - 1) * page_size() + index + 1)}
                                                     }
-                                                }
-                                            }
-                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                                {info.codec.clone()}
-                                            }
-                                            td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                                {info.duration.clone()}
-                                            }
-                                            td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap",
-                                                {format_size(Some(info.size))}
-                                            }
-                                            td {
-                                                class: "px-2 py-4 text-sm text-gray-500 truncate",
-                                                title: "{format_date(info.modified)}",
-                                                {format_date(info.modified)}
-                                            }
-                                            td { class: "flex gap-2",
-                                                Button {
-                                                    class: "px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors",
-                                                    onclick: {
-                                                        let path = info.file_path.clone();
-                                                        move |_| open_file(path.clone())
-                                                    },
-                                                    "打开"
-                                                }
+                                                    td {
+                                                        class: "px-2 py-4 text-sm text-gray-900 truncate",
+                                                        title: "{info.file_name}",
+                                                        {info.file_name.clone()}
+                                                    }
+                                                    td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                                        {
+                                                            if info.width > 0 && info.height > 0 {
+                                                                format!("{}x{}", info.width, info.height)
+                                                            } else {
+                                                                "未知".to_string()
+                                                            }
+                                                        }
+                                                    }
+                                                    td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap", {info.codec.clone()} }
+                                                    td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap", {info.duration.clone()} }
+                                                    td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap", {format_size(Some(info.size))} }
+                                                    td {
+                                                        class: "px-2 py-4 text-sm text-gray-500 truncate",
+                                                        title: "{format_date(info.modified)}",
+                                                        {format_date(info.modified)}
+                                                    }
+                                                    td { class: "flex gap-2",
+                                                        Button {
+                                                            class: "px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors",
+                                                            onclick: {
+                                                                let path = info.file_path.clone();
+                                                                move |_| open_file(path.clone())
+                                                            },
+                                                            "打开"
+                                                        }
 
-                                                // 删除按钮
-                                                Button {
-                                                    class: "px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors",
-                                                    onclick: {
-                                                        let path = info.file_path.clone();
-                                                        move |_| delete_file(path.clone())
-                                                    },
-                                                    "删除"
-                                                }
+                                                        // 删除按钮
+                                                        Button {
+                                                            class: "px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors",
+                                                            onclick: {
+                                                                let path = info.file_path.clone();
+                                                                move |_| delete_file(path.clone())
+                                                            },
+                                                            "删除"
+                                                        }
 
-                                                // 转码占位（后续实现）
-                                                Button {
-                                                    class: "px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded cursor-not-allowed",
-                                                    disabled: true,
-                                                    "转码"
+                                                        // 转码占位（后续实现）
+                                                        Button {
+                                                            class: "px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded cursor-not-allowed",
+                                                            disabled: true,
+                                                            "转码"
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
