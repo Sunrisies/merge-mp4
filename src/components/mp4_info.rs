@@ -1,8 +1,13 @@
+use crate::components::alert_dialog::{
+    AlertDialogAction, AlertDialogActions, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogRoot, AlertDialogTitle,
+};
 use crate::components::button::Button;
 use crate::components::mp4_info_loading::Mp4InfoLoading;
 use crate::components::mp4_info_table::Mp4InfoTable;
 use crate::config::AppConfig;
 use crate::utils::parse_mp4_info;
+
 use dioxus::prelude::*;
 use rayon::prelude::*;
 use std::time::Instant;
@@ -40,7 +45,9 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut selected_directory: Signal<Option<PathBuf>> =
         use_signal(|| config.read().get_query_directory());
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
-
+    let mut open = use_signal(|| false);
+    let mut confirmed = use_signal(|| false);
+    let file_name = use_signal(String::new); // 要删除文件的名称
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     // 3. 添加取消扫描的功能
@@ -176,7 +183,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         should_cancel.read().store(true, Ordering::SeqCst);
         is_loading.set(false);
     };
-
     rsx! {
         div { class: "flex flex-col h-full p-2",
             div { class: "flex flex-col  overflow-hidden",
@@ -244,11 +250,40 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 if is_loading() {
                     Mp4InfoLoading { progress, cancel_scan }
                 } else if !files.read().is_empty() {
-                    Mp4InfoTable { files, error_message }
+                    Mp4InfoTable {
+                        files,
+                        error_message,
+                        open,
+                        file_name,
+                        confirmed,
+                    }
                 } else if selected_directory.read().is_some() && !is_loading() {
                     div { class: "text-center p-8 text-gray-500", "该目录下没有找到MP4文件" }
                 }
             }
         }
+        AlertDialogRoot { open: open(), on_open_change: move |v| open.set(v),
+            AlertDialogContent {
+                AlertDialogTitle { "确定删除" }
+                AlertDialogDescription {
+                    {
+                        format!(
+                            "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
+                            file_name,
+                        )
+                    }
+                }
+                AlertDialogActions {
+                    AlertDialogCancel { "取消" }
+                    AlertDialogAction { on_click: move |_| confirmed.set(true), "确定" }
+                }
+            }
+        }
+        if confirmed() {
+            p { style: "color: var(--contrast-error-color); margin-top: 16px; font-weight: 600;",
+                "Item deleted!"
+            }
+        }
+
     }
 }

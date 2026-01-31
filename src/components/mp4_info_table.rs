@@ -18,6 +18,9 @@ enum SortBy {
 pub fn Mp4InfoTable(
     files: Signal<Vec<Mp4FileInfo>>,
     error_message: Signal<Option<String>>,
+    open: Signal<bool>,
+    file_name: Signal<String>,
+    confirmed: Signal<bool>,
 ) -> Element {
     // 分页状态
     let mut current_page: Signal<usize> = use_signal(|| 1); // 从1开始
@@ -144,12 +147,14 @@ pub fn Mp4InfoTable(
     // 删除文件（带确认对话框）
     let delete_file = {
         move |path: PathBuf| {
-            let path_for_operations = path.clone();
-            let mut files = files;
-            let mut error_message = error_message;
-            let mut deleting_files = deleting_files;
-            let mut current_page = current_page; // 需要添加这个捕获
+            // let path_for_operations = path.clone();
+            // let mut files = files;
+            // let mut error_message = error_message;
+            // let mut deleting_files = deleting_files;
+            // let mut current_page = current_page; // 需要添加这个捕获
             spawn(async move {
+                open.set(true);
+
                 // 显示确认对话框
                 if deleting_files.read().contains(&path) {
                     return;
@@ -158,66 +163,66 @@ pub fn Mp4InfoTable(
                 deleting_files.write().insert(path.clone());
 
                 // 显示确认对话框
-                let file_name = path
+                let file_name_table = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "未知文件".to_string());
+                file_name.set(file_name_table);
+                // let result = rfd::AsyncMessageDialog::new()
+                //     .set_title("确认删除")
+                //     .set_description(format!(
+                //         "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
+                //         file_name
+                //     ))
+                //     .set_buttons(rfd::MessageButtons::OkCancel)
+                //     .show()
+                //     .await;
+                // println!("删除文件: {:?}, {:?}", path, confirmed);
+                // if result == rfd::MessageDialogResult::Ok {
+                //     // 开始时间
+                //     let start = Instant::now();
+                //     // 使用spawn_blocking执行文件系统操作
+                //     let delete_result =
+                //         tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
 
-                let result = rfd::AsyncMessageDialog::new()
-                    .set_title("确认删除")
-                    .set_description(format!(
-                        "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
-                        file_name
-                    ))
-                    .set_buttons(rfd::MessageButtons::OkCancel)
-                    .show()
-                    .await;
+                //     match delete_result {
+                //         Ok(Ok(_)) => {
+                //             let remaining_count = {
+                //                 let mut files_guard = files.write();
+                //                 if let Some(pos) = files_guard
+                //                     .iter()
+                //                     .position(|f| f.file_path == path_for_operations)
+                //                 {
+                //                     files_guard.remove(pos);
+                //                     println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
+                //                 }
+                //                 // 返回剩余数量，这样就不需要在持有锁的时候读取
+                //                 files_guard.len()
+                //             }; // 这里写锁被释放
+                //             // 现在可以安全地读取，不需要files_clone
+                //             let size = *page_size.read();
+                //             let new_total_pages = if remaining_count == 0 {
+                //                 1
+                //             } else {
+                //                 remaining_count.div_ceil(size)
+                //             };
 
-                if result == rfd::MessageDialogResult::Ok {
-                    // 开始时间
-                    let start = Instant::now();
-                    // 使用spawn_blocking执行文件系统操作
-                    let delete_result =
-                        tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
+                //             let current = *current_page.read();
+                //             if current > new_total_pages {
+                //                 current_page.set(new_total_pages.max(1));
+                //             }
+                //         }
+                //         Ok(Err(e)) => {
+                //             error_message.set(Some(format!("删除失败: {}", e)));
+                //         }
+                //         Err(e) => {
+                //             error_message.set(Some(format!("任务失败: {}", e)));
+                //         }
+                //     }
+                // }
 
-                    match delete_result {
-                        Ok(Ok(_)) => {
-                            let remaining_count = {
-                                let mut files_guard = files.write();
-                                if let Some(pos) = files_guard
-                                    .iter()
-                                    .position(|f| f.file_path == path_for_operations)
-                                {
-                                    files_guard.remove(pos);
-                                    println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
-                                }
-                                // 返回剩余数量，这样就不需要在持有锁的时候读取
-                                files_guard.len()
-                            }; // 这里写锁被释放
-                            // 现在可以安全地读取，不需要files_clone
-                            let size = *page_size.read();
-                            let new_total_pages = if remaining_count == 0 {
-                                1
-                            } else {
-                                remaining_count.div_ceil(size)
-                            };
-
-                            let current = *current_page.read();
-                            if current > new_total_pages {
-                                current_page.set(new_total_pages.max(1));
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            error_message.set(Some(format!("删除失败: {}", e)));
-                        }
-                        Err(e) => {
-                            error_message.set(Some(format!("任务失败: {}", e)));
-                        }
-                    }
-                }
-
-                // 无论结果如何，都从删除集合中移除
-                deleting_files.write().remove(&path_for_operations);
+                // // 无论结果如何，都从删除集合中移除
+                // deleting_files.write().remove(&path_for_operations);
             });
         }
     };
