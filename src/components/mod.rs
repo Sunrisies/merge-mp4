@@ -4,6 +4,7 @@ pub mod button;
 pub mod file_list;
 pub mod input;
 pub mod mp4_info;
+pub mod mp4_info_loading;
 pub mod mp4_merger;
 pub mod output_settings;
 pub mod progress;
