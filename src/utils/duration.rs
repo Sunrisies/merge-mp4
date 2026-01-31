@@ -1,3 +1,5 @@
+use chrono::{DateTime, Local};
+
 /// 将秒数格式化为时间字符串
 pub fn format_duration(seconds: f64) -> String {
     let total_seconds = seconds.round() as u32;
@@ -30,5 +32,15 @@ pub fn parse_duration_to_seconds(duration: &str) -> u32 {
             minutes * 60 + seconds
         }
         _ => 0,
+    }
+}
+
+pub fn format_date(modified: Option<std::time::SystemTime>) -> String {
+    match modified {
+        Some(time) => {
+            let datetime: DateTime<Local> = time.into();
+            datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+        }
+        _ => "未知".to_string(),
     }
 }

@@ -1,7 +1,7 @@
 use crate::components::button::{Button, ButtonVariant};
 use crate::config::AppConfig;
-use crate::utils::{format_duration, parse_duration_to_seconds};
-use chrono::{DateTime, Local};
+use crate::utils::parse_duration_to_seconds;
+use crate::utils::{format_date, format_size, parse_mp4_info};
 use dioxus::prelude::*;
 use std::collections::HashSet;
 use std::ops::{AddAssign, SubAssign};
@@ -917,81 +917,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
             }
         }
     }
-}
-
-fn format_size(size: Option<u64>) -> String {
-    match size {
-        Some(s) if s < 1024 => format!("{} B", s),
-        Some(s) if s < 1024 * 1024 => format!("{:.2} KB", s as f64 / 1024.0),
-        Some(s) if s < 1024 * 1024 * 1024 => format!("{:.2} MB", s as f64 / (1024.0 * 1024.0)),
-        Some(s) => format!("{:.2} GB", s as f64 / (1024.0 * 1024.0 * 1024.0)),
-        None => "未知".to_string(),
-    }
-}
-
-fn format_date(modified: Option<std::time::SystemTime>) -> String {
-    match modified {
-        Some(time) => {
-            let datetime: DateTime<Local> = time.into();
-            datetime.format("%Y-%m-%d %H:%M:%S").to_string()
-        }
-        _ => "未知".to_string(),
-    }
-}
-
-/// 解析单个 MP4 文件信息
-fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::Error>> {
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("未知文件")
-        .to_string();
-
-    let metadata = std::fs::metadata(&path)?;
-    let modified = metadata.modified().ok();
-    let size = metadata.len();
-
-    // 使用 mp4 库解析视频信息
-    let file = std::fs::File::open(&path)?;
-    let size_u64 = file.metadata()?.len();
-    let reader = std::io::BufReader::new(file);
-
-    let mp4 = mp4::Mp4Reader::read_header(reader, size_u64)?;
-
-    // 获取视频轨道信息
-    let mut width = 0u16;
-    let mut height = 0u16;
-    let mut codec = "未知".to_string();
-    // let mut duration = None::<f64>;
-    let duration = mp4.duration().as_secs_f64();
-    let duration = format_duration(duration);
-
-    for track in mp4.tracks().values() {
-        if let mp4::TrackType::Video = track.track_type()? {
-            width = track.width();
-            height = track.height();
-            // 编解码器类型
-            codec = match track.media_type() {
-                Ok(mp4::MediaType::H264) => "H.264 / AVC".to_string(),
-                Ok(mp4::MediaType::H265) => "H.265 / HEVC".to_string(),
-                Ok(mp4::MediaType::VP9) => "VP9".to_string(),
-                Ok(other) => format!("{:?}", other),
-                Err(_) => "未知".to_string(),
-            };
-            break; // 只取第一个视频轨道
-        }
-    }
-
-    Ok(Mp4FileInfo {
-        file_name,
-        size,
-        modified,
-        width,
-        height,
-        codec,
-        duration,
-        file_path: path, // 保存完整路径
-    })
 }
 
 // 排序函数
