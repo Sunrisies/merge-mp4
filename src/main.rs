@@ -70,10 +70,13 @@ fn Layout() -> Element {
         author = _author.trim().to_string();
     }
     rsx! {
-        main { class: "h-screen flex flex-col",
-            div { class: "flex-1", Outlet::<Route> {} }
-            AboutFooter { author: "{author}", version: "{version}" }
+        ToastProvider {
 
+            main { class: "h-screen flex flex-col",
+                div { class: "flex-1", Outlet::<Route> {} }
+                AboutFooter { author: "{author}", version: "{version}" }
+
+            }
         }
     }
 }
@@ -99,9 +102,7 @@ fn Index() -> Element {
             }
             TabContent { index: 0usize, value: "tab1".to_string(), class: "flex-1 ",
 
-                ToastProvider {
-                    Mp4Merger { config }
-                }
+                Mp4Merger { config }
 
             }
             TabContent {

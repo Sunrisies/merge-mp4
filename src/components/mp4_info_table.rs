@@ -1,8 +1,10 @@
 use crate::utils::{format_date, format_size};
 use dioxus::prelude::*;
+use dioxus_primitives::toast::{ToastOptions, use_toast};
 use std::collections::HashSet;
 use std::ops::{AddAssign, SubAssign};
 use std::path::PathBuf;
+use std::time::Duration;
 use std::time::Instant;
 
 use crate::components::button::Button;
@@ -31,6 +33,7 @@ pub fn Mp4InfoTable(
     let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
     let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
     let mut selected_files: Signal<HashSet<PathBuf>> = use_signal(Default::default);
+    let toast = use_toast();
 
     let total_pages = {
         let files_len = files.read().len();
@@ -147,87 +150,43 @@ pub fn Mp4InfoTable(
     // 删除文件（带确认对话框）
     let delete_file = {
         move |path: PathBuf| {
-            // let path_for_operations = path.clone();
-            // let mut files = files;
-            // let mut error_message = error_message;
-            // let mut deleting_files = deleting_files;
-            // let mut current_page = current_page; // 需要添加这个捕获
             spawn(async move {
-                open.set(true);
-
-                // 显示确认对话框
-                if deleting_files.read().contains(&path) {
-                    return;
-                }
-                // 添加到删除集合
-                deleting_files.write().insert(path.clone());
-
-                // 显示确认对话框
                 let file_name_table = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "未知文件".to_string());
                 file_name.set(file_name_table);
-                // let result = rfd::AsyncMessageDialog::new()
-                //     .set_title("确认删除")
-                //     .set_description(format!(
-                //         "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
-                //         file_name
-                //     ))
-                //     .set_buttons(rfd::MessageButtons::OkCancel)
-                //     .show()
-                //     .await;
-                // println!("删除文件: {:?}, {:?}", path, confirmed);
-                // if result == rfd::MessageDialogResult::Ok {
-                //     // 开始时间
-                //     let start = Instant::now();
-                //     // 使用spawn_blocking执行文件系统操作
-                //     let delete_result =
-                //         tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
+                open.set(true);
 
-                //     match delete_result {
-                //         Ok(Ok(_)) => {
-                //             let remaining_count = {
-                //                 let mut files_guard = files.write();
-                //                 if let Some(pos) = files_guard
-                //                     .iter()
-                //                     .position(|f| f.file_path == path_for_operations)
-                //                 {
-                //                     files_guard.remove(pos);
-                //                     println!("删除耗时: {:.2} 毫秒", start.elapsed().as_millis());
-                //                 }
-                //                 // 返回剩余数量，这样就不需要在持有锁的时候读取
-                //                 files_guard.len()
-                //             }; // 这里写锁被释放
-                //             // 现在可以安全地读取，不需要files_clone
-                //             let size = *page_size.read();
-                //             let new_total_pages = if remaining_count == 0 {
-                //                 1
-                //             } else {
-                //                 remaining_count.div_ceil(size)
-                //             };
+                // 等待确认
+                while !confirmed() {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
 
-                //             let current = *current_page.read();
-                //             if current > new_total_pages {
-                //                 current_page.set(new_total_pages.max(1));
-                //             }
-                //         }
-                //         Ok(Err(e)) => {
-                //             error_message.set(Some(format!("删除失败: {}", e)));
-                //         }
-                //         Err(e) => {
-                //             error_message.set(Some(format!("任务失败: {}", e)));
-                //         }
-                //     }
-                // }
-
-                // // 无论结果如何，都从删除集合中移除
-                // deleting_files.write().remove(&path_for_operations);
+                if confirmed() {
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        error_message.set(Some(format!("删除文件失败: {}", e)));
+                    } else {
+                        // 从文件列表中移除
+                        let mut files_guard = files.write();
+                        if let Some(pos) = files_guard.iter().position(|f| f.file_path == path) {
+                            files_guard.remove(pos);
+                        }
+                        toast.success(
+                            "删除成功".to_string(),
+                            ToastOptions::new()
+                                .duration(Duration::from_secs(5))
+                                .permanent(false),
+                        );
+                    }
+                    confirmed.set(false);
+                }
+                // 添加到删除集合
+                deleting_files.write().insert(path.clone());
             });
         }
     };
 
-    // 批量删除函数
     let mut batch_delete = {
         move || {
             let selected = selected_files.read().clone();
@@ -236,91 +195,63 @@ pub fn Mp4InfoTable(
                 return;
             }
 
-            spawn(async move {
-                // 显示确认对话框
-                let result = rfd::AsyncMessageDialog::new()
-                    .set_title("确认批量删除")
-                    .set_description(format!(
-                        "确定要永久删除选中的 {} 个文件吗？\n此操作不可撤销。",
-                        selected.len()
-                    ))
-                    .set_buttons(rfd::MessageButtons::OkCancel)
-                    .show()
-                    .await;
+            // 设置确认对话框信息
+            file_name.set(format!("选中的 {} 个文件", selected.len()));
+            open.set(true);
 
-                if result == rfd::MessageDialogResult::Ok {
-                    // 开始时间
-                    let start = Instant::now();
+            // 使用 use_effect 来处理确认后的删除操作
+            use_effect(move || {
+                if confirmed() {
+                    let value = selected.clone();
+                    spawn(async move {
+                        let mut success_count = 0;
+                        let mut failed_files = Vec::new();
 
-                    // 添加到删除集合
-                    for path in &selected {
-                        deleting_files.write().insert(path.clone());
-                    }
-
-                    let mut success_count = 0;
-                    let mut failed_files = Vec::new();
-
-                    // 逐个删除文件
-                    for path in &selected {
-                        let delete_result = tokio::task::spawn_blocking({
-                            let path = path.clone();
-                            move || std::fs::remove_file(&path)
-                        })
-                        .await;
-
-                        match delete_result {
-                            Ok(Ok(_)) => {
-                                success_count += 1;
-                            }
-                            Ok(Err(e)) => {
-                                failed_files.push((path.display().to_string(), e.to_string()));
-                            }
-                            Err(e) => {
-                                failed_files.push((path.display().to_string(), e.to_string()));
+                        for path in &value {
+                            match tokio::fs::remove_file(&path).await {
+                                Ok(_) => success_count += 1,
+                                Err(e) => {
+                                    failed_files.push((path.display().to_string(), e.to_string()))
+                                }
                             }
                         }
-                    }
 
-                    // 从列表中移除已删除的文件
-                    if success_count > 0 {
+                        // 更新文件列表
                         let mut files_guard = files.write();
-                        files_guard.retain(|f| !selected.contains(&f.file_path));
-                    }
+                        files_guard.retain(|f| !value.contains(&f.file_path));
 
-                    // 显示结果
-                    if !failed_files.is_empty() {
-                        let error_list = failed_files
-                            .iter()
-                            .map(|(file, err)| format!("{}: {}", file, err))
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                        // 显示结果
+                        if failed_files.is_empty() {
+                            toast.success(
+                                format!("成功删除 {} 个文件", success_count),
+                                ToastOptions::new()
+                                    .duration(Duration::from_secs(5))
+                                    .permanent(false),
+                            );
+                        } else {
+                            let error_list = failed_files
+                                .iter()
+                                .map(|(file, err)| format!("{}: {}", file, err))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            error_message.set(Some(format!(
+                                "成功删除 {} 个文件，失败 {} 个：\n{}",
+                                success_count,
+                                failed_files.len(),
+                                error_list
+                            )));
+                        }
 
-                        error_message.set(Some(format!(
-                            "成功删除 {} 个文件，失败 {} 个：\n{}",
-                            success_count,
-                            failed_files.len(),
-                            error_list
-                        )));
-                    } else {
-                        error_message.set(Some(format!(
-                            "成功删除 {} 个文件，耗时 {:.2} 秒",
-                            success_count,
-                            start.elapsed().as_secs_f32()
-                        )));
-                    }
-
-                    // 清空选择
-                    selected_files.write().clear();
-                    select_all_page.set(false);
-
-                    // 从删除集合中移除
-                    for path in &selected {
-                        deleting_files.write().remove(path);
-                    }
+                        // 清空选择和重置状态
+                        selected_files.write().clear();
+                        select_all_page.set(false);
+                        confirmed.set(false);
+                    });
                 }
             });
         }
     };
+
     rsx! {
         div { class: "grid grid-rows-[auto_1fr_auto] gap-2  overflow-hidden",
             // 顶部统计和分页控制
@@ -331,7 +262,7 @@ pub fn Mp4InfoTable(
                     // 批量删除按钮（当有选中文件时显示）
                     if !selected_files.read().is_empty() {
                         Button {
-                            class: "px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-2",
+                            class: "px-2 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-2",
                             onclick: move |_| batch_delete(),
                             svg {
                                 class: "w-4 h-4",
@@ -383,7 +314,7 @@ pub fn Mp4InfoTable(
             }
 
             div { class: "border border-gray-200 rounded-md overflow-auto h-[380]",
-                table { class: "w-full table-auto divide-y divide-gray-200 min-w-max",
+                table { class: "w-full table-fixed divide-y divide-gray-200 min-w-max",
                     thead { class: "bg-gray-50 sticky top-0 z-10",
                         tr {
                             // 全选复选框
@@ -417,17 +348,17 @@ pub fn Mp4InfoTable(
                             th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-12",
                                 "序号"
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
+                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-64 truncate",
                                 "文件名"
                             }
-                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
                                 "分辨率"
                             }
-                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap",
+                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
                                 "编码格式"
                             }
                             th {
-                                class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap flex",
+                                class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap flex w-32",
                                 onclick: move |_| sort_by_duration(),
                                 span { "时长" }
                                 div { class: "ml-1 w-3 h-3",
@@ -442,13 +373,13 @@ pub fn Mp4InfoTable(
                                     }
                                 }
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
                                 "大小"
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-1/4",
+                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-48",
                                 "修改日期"
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-64",
+                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-48",
                                 "操作"
                             }
                         }
@@ -460,29 +391,29 @@ pub fn Mp4InfoTable(
                                 let file_path = info.file_path.clone();
                                 let is_selected = selected_files.read().contains(&file_path);
                                 rsx! {
-                                    tr { class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50" } else { "" },
+                                    tr {
+                                        class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50" } else { "" },
+                                        onclick: {
+                                            let path = file_path.clone();
+                                            let mut selected = selected_files;
+                                            let mut select_all_page = select_all_page;
+
+                                            move |_| {
+                                                let mut selected_guard = selected.write();
+                                                if selected_guard.contains(&path) {
+                                                    selected_guard.remove(&path);
+                                                    select_all_page.set(false);
+                                                } else {
+                                                    selected_guard.insert(path.clone());
+                                                }
+                                            }
+                                        },
                                         // 单行复选框
                                         td { class: "px-2 py-4",
                                             input {
                                                 r#type: "checkbox",
                                                 class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
                                                 checked: is_selected,
-                                                onclick: {
-                                                    let path = file_path.clone();
-                                                    let mut selected = selected_files;
-                                                    let mut select_all_page = select_all_page;
-
-                                                    move |_| {
-                                                        let mut selected_guard = selected.write();
-                                                        if selected_guard.contains(&path) {
-                                                            selected_guard.remove(&path);
-                                                            select_all_page.set(false);
-                                                        } else {
-                                                            selected_guard.insert(path.clone());
-                                                        }
-                                                    }
-                                                },
-
                                             }
                                         }
                                         // 序号（计算当前页的序号）
@@ -511,7 +442,7 @@ pub fn Mp4InfoTable(
                                             title: "{format_date(info.modified)}",
                                             {format_date(info.modified)}
                                         }
-                                        td { class: "flex gap-2",
+                                        td { class: "flex gap-2 items-center justify-center px-2 py-4",
                                             Button {
                                                 class: "px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors",
                                                 onclick: {

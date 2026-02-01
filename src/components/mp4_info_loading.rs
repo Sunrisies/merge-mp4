@@ -29,6 +29,11 @@ pub fn Mp4InfoLoading(progress: Signal<ScanProgress>, cancel_scan: Callback) -> 
                             }
                             p {
                                 class: "text-sm text-gray-600 truncate w-[300px]",
+                                title: "剩余时间: {progress.read().estimated_time_remaining}",
+                                "剩余时间: {progress.read().estimated_time_remaining}"
+                            }
+                            p {
+                                class: "text-sm text-gray-600 truncate w-[300px]",
                                 title: "正在扫描: {progress.read().current_file}",
                                 "正在扫描: {progress.read().current_file}"
                             }
