@@ -100,15 +100,15 @@ fn Index() -> Element {
                 TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
                 TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
             }
-            TabContent { index: 0usize, value: "tab1".to_string(), class: "flex-1 ",
+            TabContent {
+                index: 0usize,
+                value: "tab1".to_string(),
+                class: "flex-1 p-0",
 
                 Mp4Merger { config }
 
             }
-            TabContent {
-                index: 1usize,
-                class: "tabs-content flex-1",
-                value: "tab2".to_string(),
+            TabContent { index: 1usize, class: "flex-1", value: "tab2".to_string(),
                 Mp4Info { config }
             }
 

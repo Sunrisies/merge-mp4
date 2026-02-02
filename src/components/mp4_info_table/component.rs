@@ -13,7 +13,8 @@ use crate::utils::parse_duration_to_seconds;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortBy {
-    Duration,
+    Duration, // 时长
+    Size,     // 大小
 }
 
 #[component]
@@ -111,6 +112,7 @@ pub fn Mp4InfoTable(
                 // 根据字段设置默认排序方向
                 match field {
                     SortBy::Duration => sort_desc_clone.set(true), // 时长默认降序
+                    SortBy::Size => sort_desc_clone.set(false),    // 大小默认升序
                 }
             }
 
@@ -128,6 +130,11 @@ pub fn Mp4InfoTable(
     let mut sort_by_duration = {
         let mut handle_sort_clone = handle_sort;
         move || handle_sort_clone(SortBy::Duration)
+    };
+
+    let mut Sort_by_size = {
+        let mut handle_sort_clone = handle_sort;
+        move || handle_sort_clone(SortBy::Size)
     };
 
     let open_file = {
@@ -253,12 +260,14 @@ pub fn Mp4InfoTable(
     };
 
     rsx! {
+        document::Link { rel: "stylesheet", href: asset!("./style.css") }
+
         div { class: "grid grid-rows-[auto_1fr_auto] gap-2  overflow-hidden",
             // 顶部统计和分页控制
             // 顶部统计、批量操作和分页控制
             div { class: "flex justify-between items-center",
                 // 左侧：批量操作按钮
-                div { class: "flex items-center gap-4",
+                div { class: "flex items-center gap-4 h-12",
                     // 批量删除按钮（当有选中文件时显示）
                     if !selected_files.read().is_empty() {
                         Button {
@@ -314,11 +323,11 @@ pub fn Mp4InfoTable(
             }
 
             div { class: "border border-gray-200 rounded-md overflow-auto h-[380]",
-                table { class: "w-full table-fixed divide-y divide-gray-200 min-w-max",
+                table { class: "w-full table-fixed divide-y divide-gray-200 min-w-max border-separate border-spacing-0",
                     thead { class: "bg-gray-50 sticky top-0 z-10",
-                        tr {
+                        tr { class: "",
                             // 全选复选框
-                            th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10",
+                            th { class: " text-left tracking-wider w-10  ",
                                 input {
                                     r#type: "checkbox",
                                     class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
@@ -345,43 +354,40 @@ pub fn Mp4InfoTable(
                                 }
                             }
                             // 序号列
-                            th { class: "px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-12",
-                                "序号"
-                            }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-64 truncate",
-                                "文件名"
-                            }
-                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
-                                "分辨率"
-                            }
-                            th { class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
-                                "编码格式"
-                            }
+                            th { class: "w-12", "序号" }
+                            th { class: "w-60", "文件名" }
+                            th { class: "w-28", "分辨率" }
+                            th { class: "w-32", "编码格式" }
                             th {
-                                class: "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap flex w-32",
+                                class: "w-24",
                                 onclick: move |_| sort_by_duration(),
-                                span { "时长" }
-                                div { class: "ml-1 w-3 h-3",
-                                    if *sort_by.read() == SortBy::Duration {
-                                        if *sort_desc.read() {
-                                            span { "↓" }
-                                        } else {
-                                            span { "↑" }
-                                        }
+                                span { class: "mr-1.5", "时长" }
+                                if *sort_by.read() == SortBy::Duration {
+                                    if *sort_desc.read() {
+                                        span { "↓" }
                                     } else {
-                                        span { class: "text-gray-300", "↕" }
+                                        span { "↑" }
                                     }
+                                } else {
+                                    span { class: "text-gray-300", "↕" }
                                 }
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-32",
-                                "大小"
+                            th {
+                                class: "w-28",
+                                onclick: move |_| Sort_by_size(),
+                                span { class: "mr-1.5", "大小" }
+                                if *sort_by.read() == SortBy::Size {
+                                    if *sort_desc.read() {
+                                        span { "↓" }
+                                    } else {
+                                        span { "↑" }
+                                    }
+                                } else {
+                                    span { class: "text-gray-300", "↕" }
+                                }
                             }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-48",
-                                "修改日期"
-                            }
-                            th { class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap w-48",
-                                "操作"
-                            }
+                            th { class: "w-44", "修改日期" }
+                            th { class: "w-48", "操作" }
                         }
                     }
                     tbody { class: "bg-white divide-y divide-gray-200",
@@ -392,7 +398,7 @@ pub fn Mp4InfoTable(
                                 let is_selected = selected_files.read().contains(&file_path);
                                 rsx! {
                                     tr {
-                                        class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50" } else { "" },
+                                        class: if selected_files.read().contains(&info_clone.file_path) { "bg-blue-50 " } else { "" },
                                         onclick: {
                                             let path = file_path.clone();
                                             let mut selected = selected_files;
@@ -409,7 +415,7 @@ pub fn Mp4InfoTable(
                                             }
                                         },
                                         // 单行复选框
-                                        td { class: "px-2 py-4",
+                                        td { class: "px-2 py-4 ",
                                             input {
                                                 r#type: "checkbox",
                                                 class: "rounded border-gray-300 text-blue-600 focus:ring-blue-500",
@@ -417,15 +423,15 @@ pub fn Mp4InfoTable(
                                             }
                                         }
                                         // 序号（计算当前页的序号）
-                                        td { class: "px-2 py-4 text-sm text-gray-500 text-center",
+                                        td { class: "px-2 py-4 text-sm text-gray-500 text-center ",
                                             {format!("{}", (current_page() - 1) * page_size() + index + 1)}
                                         }
                                         td {
-                                            class: "px-2 py-4 text-sm text-gray-900 truncate",
+                                            class: "px-2 py-4 text-sm text-gray-900 truncate text-left",
                                             title: "{info.file_name}",
                                             {info.file_name.clone()}
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap",
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap ",
                                             {
                                                 if info.width > 0 && info.height > 0 {
                                                     format!("{}x{}", info.width, info.height)
@@ -434,15 +440,16 @@ pub fn Mp4InfoTable(
                                                 }
                                             }
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap", {info.codec.clone()} }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap", {info.duration.clone()} }
-                                        td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap", {format_size(Some(info.size))} }
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap ", {info.codec.clone()} }
+                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap ", {info.duration.clone()} }
+                                        td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap ", {format_size(Some(info.size))} }
                                         td {
-                                            class: "px-2 py-4 text-sm text-gray-500 truncate",
+                                            class: "px-2 py-4 text-sm text-gray-500 truncate ",
                                             title: "{format_date(info.modified)}",
                                             {format_date(info.modified)}
                                         }
-                                        td { class: "flex gap-2 items-center justify-center px-2 py-4",
+                                        td { class: "flex gap-2 items-center justify-center px-2 py-4 ",
+
                                             Button {
                                                 class: "px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors",
                                                 onclick: {
@@ -550,6 +557,9 @@ fn sort_mp4_files(files: &mut [Mp4FileInfo], field: SortBy, desc: bool) {
                     .partial_cmp(&b_secs)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
+        }
+        SortBy::Size => {
+            files.sort_by(|a, b| a.size.cmp(&b.size));
         }
     }
 
