@@ -31,8 +31,12 @@ pub struct Mp4FileInfo {
     pub modified: Option<std::time::SystemTime>,
     pub width: u16,
     pub height: u16,
-    pub codec: String,      // H.264 / H.265 / HEVC / AV1 等
-    pub duration: String,   // 秒
+    pub codec: String,    // H.264 / H.265 / HEVC / AV1 等
+    pub duration: String, // 秒
+    // 帧率
+    pub frame_rate: String, // FPS
+    // 码率
+    pub bit_rate: String,   // kbps
     pub file_path: PathBuf, // 添加文件路径
 }
 // 进度状态
@@ -261,7 +265,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
 
                 // 输出目录选择
                 div { class: "flex sm:flex-row gap-3",
-                    div { class: "flex-1 flex items-center gap-3 p-2 border border-black-300 rounded-xl ",
+                    div { class: "flex-1 flex items-center gap-3 px-2 py-1 border border-black-300 rounded-xl ",
                         span { class: "text-gray-400 text-lg", "📂" }
                         div { class: "flex-1 min-w-0 flex justify-between items-center",
                             p { class: "text-sm sm:text-base text-gray-800 truncate",

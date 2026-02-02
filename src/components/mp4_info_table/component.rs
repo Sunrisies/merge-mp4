@@ -357,6 +357,8 @@ pub fn Mp4InfoTable(
                             th { class: "w-12", "序号" }
                             th { class: "w-60", "文件名" }
                             th { class: "w-28", "分辨率" }
+                            th { class: "w-16", "帧率" }
+                            th { class: "w-32", "比特率" }
                             th { class: "w-32", "编码格式" }
                             th {
                                 class: "w-24",
@@ -440,8 +442,10 @@ pub fn Mp4InfoTable(
                                                 }
                                             }
                                         }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap ", {info.codec.clone()} }
-                                        td { class: "px-4 py-4 text-sm text-gray-500 whitespace-nowrap ", {info.duration.clone()} }
+                                        td { class: " ", {info.frame_rate.clone()} }
+                                        td { class: " ", {info.bit_rate.clone()} }
+                                        td { class: " ", {info.codec.clone()} }
+                                        td { class: " ", {info.duration.clone()} }
                                         td { class: "px-2 py-4 text-sm text-gray-500 whitespace-nowrap ", {format_size(Some(info.size))} }
                                         td {
                                             class: "px-2 py-4 text-sm text-gray-500 truncate ",
