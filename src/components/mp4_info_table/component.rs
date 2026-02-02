@@ -1,15 +1,18 @@
+use crate::components::alert_dialog::{
+    AlertDialogContent, AlertDialogDescription, AlertDialogRoot, AlertDialogTitle,
+};
+use crate::components::button::Button;
+use crate::components::mp4_info::Mp4FileInfo;
+use crate::ffmpeg::transcoding::transcode_file;
+use crate::utils::parse_duration_to_seconds;
 use crate::utils::{format_date, format_size};
 use dioxus::prelude::*;
 use dioxus_primitives::toast::{ToastOptions, use_toast};
 use std::collections::HashSet;
 use std::ops::{AddAssign, SubAssign};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::time::Instant;
-
-use crate::components::button::Button;
-use crate::components::mp4_info::Mp4FileInfo;
-use crate::utils::parse_duration_to_seconds;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortBy {
@@ -22,8 +25,9 @@ pub fn Mp4InfoTable(
     files: Signal<Vec<Mp4FileInfo>>,
     error_message: Signal<Option<String>>,
     open: Signal<bool>,
-    file_name: Signal<String>,
     confirmed: Signal<bool>,
+    alert_title: Signal<String>,
+    alert_description: Signal<String>,
 ) -> Element {
     // 分页状态
     let mut current_page: Signal<usize> = use_signal(|| 1); // 从1开始
@@ -34,6 +38,12 @@ pub fn Mp4InfoTable(
     let sort_by: Signal<SortBy> = use_signal(|| SortBy::Duration);
     let sort_desc: Signal<bool> = use_signal(|| true); // 默认降序（新的在前）
     let mut selected_files: Signal<HashSet<PathBuf>> = use_signal(Default::default);
+    let mut show_transcode_dialog = use_signal(|| false);
+    // 转码进度对话框状态
+    let mut transcode_progress: Signal<f32> = use_signal(|| 0.0); // 单个的
+    let mut completed_files: Signal<usize> = use_signal(|| 0); // 完成的数量
+    let mut total_files: Signal<usize> = use_signal(|| 0); // 总文件数量
+    let mut current_file_path: Signal<String> = use_signal(String::new); // 当前文件路径
     let toast = use_toast();
 
     let total_pages = {
@@ -158,11 +168,16 @@ pub fn Mp4InfoTable(
     let delete_file = {
         move |path: PathBuf| {
             spawn(async move {
-                let file_name_table = path
+                alert_title.set("删除文件".to_string());
+                let file_name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "未知文件".to_string());
-                file_name.set(file_name_table);
+                let description = format!(
+                    "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
+                    file_name,
+                );
+                alert_description.set(description);
                 open.set(true);
 
                 // 等待确认
@@ -201,9 +216,13 @@ pub fn Mp4InfoTable(
                 error_message.set(Some("请先选择要删除的文件".to_string()));
                 return;
             }
-
+            alert_title.set("删除文件".to_string());
+            let description = format!(
+                "确定要永久删除文件 \"选中的 {} 个文件\" 吗？\n此操作不可撤销。",
+                selected.len(),
+            );
+            alert_description.set(description);
             // 设置确认对话框信息
-            file_name.set(format!("选中的 {} 个文件", selected.len()));
             open.set(true);
 
             // 使用 use_effect 来处理确认后的删除操作
@@ -258,6 +277,71 @@ pub fn Mp4InfoTable(
             });
         }
     };
+    let mut batch_transcode = {
+        move || {
+            let selected = selected_files.read().clone();
+            if selected.is_empty() {
+                error_message.set(Some("请先选择要转码的文件".to_string()));
+                return;
+            }
+
+            total_files.set(selected.len());
+            completed_files.set(0);
+            current_file_path.set(String::new());
+            alert_title.set("转码文件".to_string());
+            let description = format!(
+                "确定要对选中的 {} 个文件进行转码吗？\n\n注意：\n- 转码过程可能需要较长时间\n- 转码后的文件将保存在原文件同目录下，文件名后会添加\"_transcoded\"后缀\n- 此操作不可撤销",
+                selected.len(),
+            );
+            alert_description.set(description);
+            open.set(true);
+
+            use_effect(move || {
+                if confirmed() {
+                    let value = selected.clone();
+                    let total = value.len();
+                    show_transcode_dialog.set(true);
+                    spawn(async move {
+                        let output_dir = Path::new("./").to_path_buf();
+
+                        for (index, path) in value.iter().enumerate() {
+                            // 更新当前处理的文件路径
+                            current_file_path.set(path.display().to_string());
+                            let path_clone = path.clone();
+                            transcode_progress.set(0.0);
+                            println!("转码文件: {}", path.display());
+                            // 目录
+                            transcode_file(path.clone(), &output_dir, move |progress| {
+                                // 在这里处理进度更新
+                                println!("文件: {} 转码进度: {}%", path_clone.display(), progress);
+                                transcode_progress.set(progress);
+                                // 可以在这里更新UI或其他状态
+                            })
+                            .await;
+
+                            completed_files.set(index + 1);
+                        }
+
+                        // 转码完成
+                        completed_files.set(total);
+                        // 延迟关闭进度对话框
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        show_transcode_dialog.set(false);
+
+                        // 清空选择和重置状态
+                        selected_files.write().clear();
+                        select_all_page.set(false);
+                        confirmed.set(false);
+
+                        toast.success(
+                            format!("成功转码 {} 个文件", total),
+                            ToastOptions::default(),
+                        );
+                    });
+                }
+            });
+        }
+    };
 
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("./style.css") }
@@ -284,6 +368,21 @@ pub fn Mp4InfoTable(
                                 }
                             }
                             "批量删除 ({selected_files.read().len()})"
+                        }
+                        Button {
+                            class: "px-2 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors flex items-center gap-2",
+                            onclick: move |_| batch_transcode(),
+                            svg {
+                                class: "w-4 h-4",
+                                fill: "currentColor",
+                                view_box: "0 0 20 20",
+                                path {
+                                    fill_rule: "evenodd",
+                                    d: "M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z",
+                                    clip_rule: "evenodd",
+                                }
+                            }
+                            "批量转码 ({selected_files.read().len()})"
                         }
                     } else {
                         div { class: "text-sm text-gray-500", "选择文件进行批量操作" }
@@ -543,6 +642,51 @@ pub fn Mp4InfoTable(
                 }
             }
 
+        }
+        AlertDialogRoot {
+            class: "p-0",
+            open: show_transcode_dialog(),
+            on_open_change: move |v| show_transcode_dialog.set(v),
+            AlertDialogContent { class: "max-w-md w-full p-6 overflow-visible", // 设置最大宽度并防止溢出
+                AlertDialogTitle { class: "text-lg font-semibold mb-4", "转码进度" }
+                AlertDialogDescription { // 转码进度条
+                    class: "overflow-visible mb-4", // 设置最大宽度并防止溢出
+                    div { class: "w-full bg-gray-200 rounded-full h-2.5 mb-2",
+                        div {
+                            class: "bg-blue-600 h-2.5 rounded-full transition-all duration-300",
+                            style: "width: {transcode_progress()}%",
+                        }
+                    }
+
+                    // 转码任务信息
+                    div { class: "flex justify-between items-center mb-2",
+                        div { class: "text-sm text-gray-600",
+                            "已处理: {completed_files()} / {total_files}"
+                        }
+                        div { class: "text-sm font-semibold text-blue-600",
+                            "{transcode_progress().round()}%"
+                        }
+                    }
+
+                    // 当前处理的文件信息
+                    if !current_file_path().is_empty() {
+                        div { class: "mt-2 p-3 bg-gray-100 rounded",
+                            div { class: "text-xs text-gray-500 mb-1", "当前处理文件:" }
+                            div { class: "text-sm text-gray-800 truncate", "{current_file_path()}" }
+                        }
+                    }
+
+                    // 转码状态信息
+                    div { class: "mt-4 text-sm text-gray-600",
+                        if transcode_progress() >= 100.0 {
+                            "转码已完成"
+                        } else {
+                            "转码进行中，请稍候..."
+                        }
+                    }
+                }
+
+            }
         }
 
     }

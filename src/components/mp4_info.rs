@@ -2,14 +2,13 @@ use crate::components::alert_dialog::{
     AlertDialogAction, AlertDialogActions, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogRoot, AlertDialogTitle,
 };
-use dioxus_primitives::toast::{ToastOptions, use_toast};
-use std::time::Duration;
-
 use crate::components::button::Button;
 use crate::components::mp4_info_loading::Mp4InfoLoading;
 use crate::components::mp4_info_table::Mp4InfoTable;
 use crate::config::AppConfig;
 use crate::utils::parse_mp4_info;
+use dioxus_primitives::toast::{ToastOptions, use_toast};
+use std::time::Duration;
 
 use dioxus::prelude::*;
 use rayon::prelude::*;
@@ -55,13 +54,17 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
     let mut open = use_signal(|| false);
     let mut confirmed = use_signal(|| false);
-    let file_name = use_signal(String::new); // 要删除文件的名称
     let mut is_loading: Signal<bool> = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     // 3. 添加取消扫描的功能
     let mut should_cancel = use_signal(|| Arc::new(AtomicBool::new(false)));
     // 新增：进度状态
     let mut progress: Signal<ScanProgress> = use_signal(ScanProgress::default);
+    // 弹窗的title
+    let alert_title = use_signal(String::new);
+    // 弹窗的描述
+    let alert_description = use_signal(String::new);
+    // 转码弹窗
     let toast = use_toast();
 
     // 提取核心逻辑为无参闭包，避免重复代码
@@ -161,40 +164,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     }
 
                     Ok(mp4_files)
-                    // for (idx, path) in mp4_paths.into_iter().enumerate() {
-                    //     // 检查是否取消
-                    //     if cancel_flag_for_blocking.load(Ordering::SeqCst) {
-                    //         break;
-                    //     }
-
-                    //     let file_name = path
-                    //         .file_name()
-                    //         .and_then(|n| n.to_str())
-                    //         .unwrap_or("未知文件")
-                    //         .to_string();
-
-                    //     // 创建进度更新
-                    //     let progress_update = ScanProgress {
-                    //         current: idx + 1,
-                    //         total,
-                    //         current_file: file_name.clone(),
-                    //     };
-                    //     let tx_clone = tx_for_task.clone();
-                    //     let _ = futures::executor::block_on(async {
-                    //         tx_clone.send(progress_update).await.ok()
-                    //     });
-                    //     match parse_mp4_info(path) {
-                    //         Ok(info) => {
-                    //             // println!("解析到文件信息: {:?}", info);
-                    //             mp4_files.push(info);
-                    //         }
-                    //         Err(e) => {
-                    //             println!("解析文件信息失败: {} - {}", file_name, e);
-                    //         }
-                    //     }
-                    // }
-
-                    // Ok(mp4_files)
                 })
                 .await;
                 drop(tx);
@@ -262,7 +231,6 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     rsx! {
         div { class: "flex flex-col h-full p-2",
             div { class: "flex flex-col  overflow-hidden",
-
                 // 输出目录选择
                 div { class: "flex sm:flex-row gap-3",
                     div { class: "flex-1 flex items-center gap-3 px-2 py-1 border border-black-300 rounded-xl ",
@@ -318,8 +286,13 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         files,
                         error_message,
                         open,
-                        file_name,
                         confirmed,
+                        alert_title,
+                        alert_description,
+                                        // total_files,
+                    // completed_files,
+                    // transcode_progress,
+                    // current_file_path,
                     }
                 } else if selected_directory.read().is_some() && !is_loading() {
                     div { class: "text-center p-8 text-gray-500", "该目录下没有找到MP4文件" }
@@ -328,15 +301,8 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
         }
         AlertDialogRoot { open: open(), on_open_change: move |v| open.set(v),
             AlertDialogContent {
-                AlertDialogTitle { "确定删除" }
-                AlertDialogDescription {
-                    {
-                        format!(
-                            "确定要永久删除文件 \"{}\" 吗？\n此操作不可撤销。",
-                            file_name,
-                        )
-                    }
-                }
+                AlertDialogTitle { {alert_title} }
+                AlertDialogDescription { {alert_description} }
                 AlertDialogActions {
                     AlertDialogCancel { "取消" }
                     AlertDialogAction {
@@ -350,6 +316,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                 }
             }
         }
+
         if confirmed() {
             p { style: "color: var(--contrast-error-color); margin-top: 16px; font-weight: 600;",
                 "Item deleted!"

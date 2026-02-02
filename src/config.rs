@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub output_directory: Option<PathBuf>,
     pub last_input_directory: Option<PathBuf>,
+    pub compress_output_directory: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -83,5 +84,14 @@ impl AppConfig {
     /// 获取需要查询的目录，如果未设置，则回退到None
     pub fn get_query_directory(&self) -> Option<PathBuf> {
         self.last_input_directory.clone()
+    }
+    /// 设置压缩输出目录
+    pub fn _set_compress_output_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.compress_output_directory = Some(path);
+        self.save()
+    }
+    /// 获取压缩输出目录，如果未设置，则回退到None
+    pub fn _get_compress_output_directory(&self) -> Option<PathBuf> {
+        self.compress_output_directory.clone()
     }
 }
