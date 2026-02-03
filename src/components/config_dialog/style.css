@@ -4,10 +4,12 @@
     width: 90%;
 }
 
-.config-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+.config-tabs {
+    margin-bottom: 1rem;
+}
+
+.tab-content {
+    padding: 0.5rem 0;
 }
 
 .config-section {

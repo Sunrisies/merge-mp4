@@ -102,46 +102,6 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
         files.write().remove(index);
     };
 
-    let select_output_directory = {
-        move |_| async move {
-            if let Some(result) = rfd::AsyncFileDialog::new()
-                .set_title("选择输出目录")
-                .pick_folder()
-                .await
-            {
-                let path = result.path().to_path_buf();
-                if let Err(e) = config.write().set_output_directory(path.clone()) {
-                    error_message.set(Some(format!("无法保存输出目录设置: {}", e)));
-                } else {
-                    toast.success(
-                        "输出目录已保存".to_string(),
-                        ToastOptions::new()
-                            .description(format!("目录: {}", path.display()))
-                            .duration(Duration::from_secs(3))
-                            .permanent(false),
-                    );
-                }
-            }
-        }
-    };
-
-    let clear_output_directory = {
-        move |_| {
-            config.write().output_directory = None;
-            if let Err(e) = config.write().save() {
-                error_message.set(Some(format!("无法清除输出目录设置: {}", e)));
-            } else {
-                toast.success(
-                    "输出目录已清除".to_string(),
-                    ToastOptions::new()
-                        .description("将使用默认目录")
-                        .duration(Duration::from_secs(3))
-                        .permanent(false),
-                );
-            }
-        }
-    };
-
     // ✅ 订阅接收端
     use_coroutine(move |mut rx: UnboundedReceiver<MergeEvent>| async move {
         while let Some(event) = rx.next().await {
@@ -221,12 +181,7 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
                     h2 { class: "text-sm font-semibold mb-2 flex items-center gap-2",
                         "输出文件设置"
                     }
-                    OutputSettings {
-                        output_filename,
-                        config,
-                        on_select_dir: select_output_directory,
-                        on_clear_dir: clear_output_directory,
-                    }
+                    OutputSettings { output_filename, config }
 
                 }
 

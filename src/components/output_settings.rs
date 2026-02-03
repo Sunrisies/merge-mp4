@@ -1,17 +1,10 @@
-use super::button::Button;
 use super::input::Input;
-use crate::components::button::ButtonVariant;
 use crate::config::AppConfig;
 use dioxus::prelude::*;
 
 // 2. 提取子组件：输出设置区域
 #[component]
-pub fn OutputSettings(
-    output_filename: Signal<String>,
-    config: Signal<AppConfig>,
-    on_select_dir: Callback<MouseEvent>,
-    on_clear_dir: Callback<MouseEvent>,
-) -> Element {
+pub fn OutputSettings(output_filename: Signal<String>, config: Signal<AppConfig>) -> Element {
     rsx! {
         div { class: "space-y-3",
             div { class: "flex items-center gap-3",
@@ -31,8 +24,6 @@ pub fn OutputSettings(
                         "使用默认目录"
                     }
                 }
-                Button { variant: ButtonVariant::Secondary, onclick: on_select_dir, "选择目录" }
-                Button { variant: ButtonVariant::Secondary, onclick: on_clear_dir, "清除" }
             }
         }
     }

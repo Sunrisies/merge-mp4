@@ -4,6 +4,7 @@ use crate::components::alert_dialog::{
 };
 use crate::components::button::Button;
 use crate::components::input::Input;
+use crate::components::tabs::*;
 use crate::config::AppConfig;
 use dioxus::prelude::*;
 use std::path::PathBuf;
@@ -36,7 +37,7 @@ pub fn ConfigDialog(
     let mut transcode_input_dir = use_signal(|| {
         config
             .read()
-            .last_input_directory
+            .compress_input_directory
             .clone()
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -128,7 +129,7 @@ pub fn ConfigDialog(
 
         // 更新转码相关配置
         if !transcode_input_dir.read().is_empty() {
-            new_config.last_input_directory =
+            new_config.compress_input_directory =
                 Some(PathBuf::from(transcode_input_dir.read().as_str()));
         }
         if !transcode_output_dir.read().is_empty() {
@@ -159,67 +160,77 @@ pub fn ConfigDialog(
                 AlertDialogTitle { "配置设置" }
                 AlertDialogDescription { "设置合并和转码的默认目录" }
 
-                div { class: "config-form",
-                    // 合并配置部分
-                    div { class: "config-section",
-                        h3 { class: "section-title", "合并设置" }
-
-                        div { class: "form-field",
-                            label { "导入目录：" }
-                            div { class: "input-group ",
-                                Input {
-                                    r#type: "text",
-                                    value: "{merge_input_dir}",
-                                    oninput: move |e: FormEvent| merge_input_dir.set(e.value()),
+                Tabs {
+                    default_value: "merge".to_string(),
+                    horizontal: true,
+                    class: "config-tabs",
+                    TabList {
+                        TabTrigger { value: "merge".to_string(), index: 0usize, "合并设置" }
+                        TabTrigger { value: "transcode".to_string(), index: 1usize, "转码设置" }
+                    }
+                    TabContent {
+                        index: 0usize,
+                        value: "merge".to_string(),
+                        class: "tab-content",
+                        div { class: "config-form py-2 px-4",
+                            div { class: "form-field",
+                                label { "导入目录：" }
+                                div { class: "input-group",
+                                    Input {
+                                        r#type: "text",
+                                        value: "{merge_input_dir}",
+                                        oninput: move |e: FormEvent| merge_input_dir.set(e.value()),
+                                    }
+                                    Button { onclick: select_merge_input_dir, "浏览" }
                                 }
-                                Button { onclick: select_merge_input_dir, "浏览" }
                             }
-                        }
 
-                        div { class: "form-field",
-                            label { "导出目录：" }
-                            div { class: "input-group",
-                                Input {
-                                    r#type: "text",
-                                    value: "{merge_output_dir}",
-                                    oninput: move |e: FormEvent| {
-                                        merge_output_dir.set(e.value());
-                                    },
+                            div { class: "form-field",
+                                label { "导出目录：" }
+                                div { class: "input-group",
+                                    Input {
+                                        r#type: "text",
+                                        value: "{merge_output_dir}",
+                                        oninput: move |e: FormEvent| {
+                                            merge_output_dir.set(e.value());
+                                        },
+                                    }
+                                    Button { onclick: select_merge_output_dir, "浏览" }
                                 }
-                                Button { onclick: select_merge_output_dir, "浏览" }
                             }
                         }
                     }
-
-                    // 转码配置部分
-                    div { class: "config-section",
-                        h3 { class: "section-title", "转码设置" }
-
-                        div { class: "form-field",
-                            label { "导入目录：" }
-                            div { class: "input-group",
-                                Input {
-                                    r#type: "text",
-                                    value: "{transcode_input_dir}",
-                                    oninput: move |e: FormEvent| {
-                                        transcode_input_dir.set(e.value());
-                                    },
+                    TabContent {
+                        index: 1usize,
+                        value: "transcode".to_string(),
+                        class: "tab-content",
+                        div { class: "config-form py-2 px-4",
+                            div { class: "form-field",
+                                label { "导入目录：" }
+                                div { class: "input-group",
+                                    Input {
+                                        r#type: "text",
+                                        value: "{transcode_input_dir}",
+                                        oninput: move |e: FormEvent| {
+                                            transcode_input_dir.set(e.value());
+                                        },
+                                    }
+                                    Button { onclick: select_transcode_input_dir, "浏览" }
                                 }
-                                Button { onclick: select_transcode_input_dir, "浏览" }
                             }
-                        }
 
-                        div { class: "form-field",
-                            label { "导出目录：" }
-                            div { class: "input-group",
-                                Input {
-                                    r#type: "text",
-                                    value: "{transcode_output_dir}",
-                                    oninput: move |e: FormEvent| {
-                                        transcode_output_dir.set(e.value());
-                                    },
+                            div { class: "form-field",
+                                label { "导出目录：" }
+                                div { class: "input-group",
+                                    Input {
+                                        r#type: "text",
+                                        value: "{transcode_output_dir}",
+                                        oninput: move |e: FormEvent| {
+                                            transcode_output_dir.set(e.value());
+                                        },
+                                    }
+                                    Button { onclick: select_transcode_output_dir, "浏览" }
                                 }
-                                Button { onclick: select_transcode_output_dir, "浏览" }
                             }
                         }
                     }
