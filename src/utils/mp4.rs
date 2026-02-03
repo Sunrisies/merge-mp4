@@ -52,7 +52,7 @@ pub fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::
             break; // 只取第一个视频轨道
         }
     }
-    let h265 = should_transcode_to_h265(
+    let (is_transcoding, level) = should_transcode_to_h265(
         width.into(),
         height.into(),
         frame_rate,
@@ -60,11 +60,6 @@ pub fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::
         mp4.duration().as_secs_f64(),
         &codec,
     );
-    if h265 {
-        println!("该视频{}是H.265: {}", file_name, h265);
-    } else {
-        // println!("不满足的视频{}", file_name);
-    }
     Ok(Mp4FileInfo {
         file_name,
         size,
@@ -76,6 +71,8 @@ pub fn parse_mp4_info(path: PathBuf) -> Result<Mp4FileInfo, Box<dyn std::error::
         file_path: path, // 保存完整路径
         frame_rate: frame_rate.to_string(),
         bit_rate: bit_rate.to_string(),
+        is_transcoding,
+        level,
     })
 }
 
@@ -87,17 +84,17 @@ fn should_transcode_to_h265(
     bitrate: u32,
     duration_sec: f64, // 时长（秒）
     codec: &str,
-) -> bool {
+) -> (bool, i32) {
     // 如果已经是H.265，不需要转码
     if codec.contains("hvc") || codec.contains("hev") || codec.contains("265") {
         println!("已经是H.265，不需要转码");
-        return false;
+        return (false, 0);
     }
     // 1. 如果是低分辨率视频，可能不需要转码
     let resolution = width * height;
     if resolution < 640 * 480 {
         // 标清以下
-        return false;
+        return (false, 0);
     }
     // 计算文件大小（MB）
     let current_size_mb = (bitrate as f64 * duration_sec) / (8.0 * 1024.0 * 1024.0);
@@ -186,7 +183,7 @@ fn should_transcode_to_h265(
         "分析结果: 分辨率{}x{}, {}fps, {}kbps, {:.1}MB, 评分: {}",
         width, height, frame_rate, current_bitrate_kbps as u32, current_size_mb, score
     );
-    should_transcode
+    (should_transcode, score)
 }
 
 /// 获取H.264推荐码率（kbps）

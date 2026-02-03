@@ -18,6 +18,7 @@ use std::time::Instant;
 enum SortBy {
     Duration, // 时长
     Size,     // 大小
+    Level,    // 等级
 }
 
 #[component]
@@ -128,6 +129,7 @@ pub fn Mp4InfoTable(
                 match field {
                     SortBy::Duration => sort_desc_clone.set(true), // 时长默认降序
                     SortBy::Size => sort_desc_clone.set(false),    // 大小默认升序
+                    SortBy::Level => sort_desc_clone.set(true),    // 等级默认降序
                 }
             }
 
@@ -145,6 +147,11 @@ pub fn Mp4InfoTable(
     let mut sort_by_duration = {
         let mut handle_sort_clone = handle_sort;
         move || handle_sort_clone(SortBy::Duration)
+    };
+
+    let mut sort_by_level = {
+        let mut handle_sort_clone = handle_sort;
+        move || handle_sort_clone(SortBy::Level)
     };
 
     let mut Sort_by_size = {
@@ -507,6 +514,21 @@ pub fn Mp4InfoTable(
                             th { class: "w-12", "序号" }
                             th { class: "w-60", "文件名" }
                             th { class: "w-28", "分辨率" }
+                            th { class: "w-28", "转码" }
+                            th {
+                                class: "w-28",
+                                onclick: move |_| sort_by_level(),
+                                span { class: "mr-1.5", "等级" }
+                                if *sort_by.read() == SortBy::Level {
+                                    if *sort_desc.read() {
+                                        span { "↓" }
+                                    } else {
+                                        span { "↑" }
+                                    }
+                                } else {
+                                    span { class: "text-gray-300", "↕" }
+                                }
+                            }
                             th { class: "w-16", "帧率" }
                             th { class: "w-32", "比特率" }
                             th { class: "w-32", "编码格式" }
@@ -592,6 +614,9 @@ pub fn Mp4InfoTable(
                                                 }
                                             }
                                         }
+                                        td { class: " ", {info.is_transcoding.to_string()} }
+                                        td { class: " ", {info.level.to_string()} }
+
                                         td { class: " ", {info.frame_rate.clone()} }
                                         td { class: " ", {info.bit_rate.clone()} }
                                         td { class: " ", {info.codec.clone()} }
@@ -702,7 +727,7 @@ pub fn Mp4InfoTable(
                 AlertDialogTitle { class: "text-lg font-semibold mb-4", "转码进度" }
                 AlertDialogDescription { // 转码进度条
                     class: "overflow-visible mb-4", // 设置最大宽度并防止溢出
-
+                    div { class: "text-right", {format!("{:.2}", transcode_progress())} }
                     div { class: "w-full bg-gray-200 rounded-full h-2.5 mb-2",
                         div {
                             class: "bg-blue-600 h-2.5 rounded-full transition-all duration-300",
@@ -779,6 +804,9 @@ fn sort_mp4_files(files: &mut [Mp4FileInfo], field: SortBy, desc: bool) {
         }
         SortBy::Size => {
             files.sort_by(|a, b| a.size.cmp(&b.size));
+        }
+        SortBy::Level => {
+            files.sort_by(|a, b| a.level.cmp(&b.level));
         }
     }
 

@@ -37,6 +37,10 @@ pub struct Mp4FileInfo {
     // 码率
     pub bit_rate: String,   // kbps
     pub file_path: PathBuf, // 添加文件路径
+    /// 是否需要进行转码
+    pub is_transcoding: bool,
+    /// 等级
+    pub level: i32,
 }
 // 进度状态
 #[derive(Debug, Clone, Default)]
