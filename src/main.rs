@@ -7,6 +7,8 @@ mod components;
 mod config;
 mod ffmpeg;
 mod utils;
+use crate::components::button::Button;
+use crate::components::config_dialog::ConfigDialog;
 use crate::components::mp4_merger::Mp4Merger;
 use crate::components::tabs::*;
 use crate::config::AppConfig;
@@ -65,56 +67,69 @@ fn Layout() -> Element {
     let mut author = String::from("");
 
     let author_list: Vec<&str> = authors.split(':').collect();
-    for (i, _author) in author_list.iter().enumerate() {
-        println!("作者 {}: {}", i + 1, author);
+    for _author in author_list.iter() {
         author = _author.trim().to_string();
     }
     rsx! {
         ToastProvider {
-
             main { class: "h-screen flex flex-col",
                 div { class: "flex-1", Outlet::<Route> {} }
                 AboutFooter { author: "{author}", version: "{version}" }
-
             }
         }
     }
 }
 #[component]
 fn Index() -> Element {
-    let config: Signal<AppConfig> = use_signal(|| {
+    let mut config: Signal<AppConfig> = use_signal(|| {
         AppConfig::load().unwrap_or_else(|e| {
             eprintln!("Failed to load config: {}", e);
             AppConfig::default()
         })
     });
 
+    let mut show_config = use_signal(|| false);
+
     println!("config{:?}", config);
     rsx! {
+        div { class: " flex h-full justify-between p-4 border-b",
 
-        Tabs {
-            default_value: "tab1".to_string(),
-            horizontal: true,
-            class: "h-full",
-            TabList {
-                TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
-                TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
+            Tabs {
+                default_value: "tab1".to_string(),
+                horizontal: true,
+                class: "flex-1",
+                TabList {
+                    TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
+                    TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
+                }
+                TabContent {
+                    index: 0usize,
+                    value: "tab1".to_string(),
+                    class: "flex-1 p-0",
+
+                    Mp4Merger { config }
+
+                }
+                TabContent {
+                    index: 1usize,
+                    class: "flex-1",
+                    value: "tab2".to_string(),
+                    Mp4Info { config }
+                }
+
             }
-            TabContent {
-                index: 0usize,
-                value: "tab1".to_string(),
-                class: "flex-1 p-0",
-
-                Mp4Merger { config }
-
+            div { class: "absolute right-5 top-5",
+                Button { onclick: move |_| show_config.set(true), "配置" }
             }
-            TabContent { index: 1usize, class: "flex-1", value: "tab2".to_string(),
-                Mp4Info { config }
-            }
-
         }
 
-        // 错误消息（固定在底部）
+        ConfigDialog {
+            open: show_config,
+            config,
+            on_save: move |new_config| {
+                config.set(new_config);
+            },
+        }
     }
 }
 

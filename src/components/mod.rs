@@ -2,6 +2,7 @@
 pub mod about_footer;
 pub mod alert_dialog;
 pub mod button;
+pub mod config_dialog;
 pub mod file_list;
 pub mod input;
 pub mod mp4_info;
