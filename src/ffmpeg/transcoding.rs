@@ -38,9 +38,13 @@ where
     //     .arg("-i")
     //     .arg(&path)
     //     .arg("-c:v")
-    //     .arg("libx264") // 使用H.264编码
+    //     .arg("libx265") // 使用H.264编码
+    //     .arg("-crf") // 画质控制
+    //     .arg("18") // 质量值（18-28，越小画质越好，28 是 1080p 推荐值）
+    //     .arg("-preset")
+    //     .arg("medium")
     //     .arg("-c:a")
-    //     .arg("aac") // 使用AAC音频编码
+    //     .arg("copy")
     //     .arg("-progress")
     //     .arg("pipe:1") // 将进度输出到标准输出
     //     .arg("-nostats") // 禁用默认的统计信息输出
@@ -50,6 +54,29 @@ where
     //     .stderr(std::process::Stdio::piped())
     //     .spawn()
     //     .expect("Failed to spawn ffmpeg process");
+
+    // let mut child = tokio::process::Command::new("ffmpeg")
+    //     .creation_flags(0x08000000) // CREATE_NO_WINDOW
+    //     .arg("-i")
+    //     .arg(&path)
+    //     .arg("-c:v")
+    //     .arg("libsvtav1") // SVT-AV1编码器
+    //     .arg("-preset")
+    //     .arg("8") // 预设值（4-13，4最慢最好，13最快最差）
+    //     .arg("-crf")
+    //     .arg("30") // 质量值（0-63，越小质量越好，30-35是推荐范围）
+    //     .arg("-c:a")
+    //     .arg("copy") // 音频直接复制
+    //     .arg("-progress")
+    //     .arg("pipe:1")
+    //     .arg("-nostats")
+    //     .arg("-y")
+    //     .arg(&output_path)
+    //     .stdout(std::process::Stdio::piped())
+    //     .stderr(std::process::Stdio::piped())
+    //     .spawn()
+    //     .expect("Failed to spawn ffmpeg process");
+
     let mut child = tokio::process::Command::new("ffmpeg")
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .arg("-i")
@@ -58,9 +85,15 @@ where
         .arg("hevc_nvenc") // NVIDIA GPU H.265 编码（压缩率更高）
         // .arg("h264_nvenc") // 如果要用 H.264 GPU 编码，改这行
         .arg("-preset")
-        .arg("p5") // p1=最快 p7=最好，p5 是平衡画质与速度
+        .arg("p4") // p1=最快 p7=最好，p5 是平衡画质与速度
         .arg("-cq")
         .arg("25") // 质量值（18-30，越小画质越好，25 是 1080p 推荐值）
+        .arg("-tune")
+        .arg("hq") // 添加高质量调优
+        .arg("-spatial-aq")
+        .arg("1") // 启用空间自适应量化
+        .arg("-temporal-aq")
+        .arg("1") // 启用时间自适应量化
         .arg("-c:a")
         .arg("copy") // 音频直接复制，不重新编码（速度最快且无损）
         .arg("-progress")
