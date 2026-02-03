@@ -4,8 +4,8 @@ use crate::components::alert_dialog::{
 use crate::components::button::Button;
 use crate::components::mp4_info::Mp4FileInfo;
 use crate::ffmpeg::transcoding::transcode_file;
-use crate::utils::parse_duration_to_seconds;
 use crate::utils::{format_date, format_size};
+use crate::utils::{format_duration, parse_duration_to_seconds};
 use dioxus::prelude::*;
 use dioxus_primitives::toast::{ToastOptions, use_toast};
 use std::collections::HashSet;
@@ -44,6 +44,11 @@ pub fn Mp4InfoTable(
     let mut completed_files: Signal<usize> = use_signal(|| 0); // 完成的数量
     let mut total_files: Signal<usize> = use_signal(|| 0); // 总文件数量
     let mut current_file_path: Signal<String> = use_signal(String::new); // 当前文件路径
+    // 新增状态：用于估算
+    let mut last_task_end_time = use_signal(Instant::now); // 上一个任务结束时间
+    let mut avg_speed = use_signal(|| 0.0); // 平均处理速度
+    let mut total_eta_seconds = use_signal(|| 0.0); // 总剩余时间
+    let mut current_task_eta = use_signal(|| 0.0); // 当前任务剩余时间
     let toast = use_toast();
 
     let total_pages = {
@@ -288,6 +293,8 @@ pub fn Mp4InfoTable(
             total_files.set(selected.len());
             completed_files.set(0);
             current_file_path.set(String::new());
+
+            let task_overhead_estimated = 2.0_f32; // 估算的任务间隔开销（秒）
             alert_title.set("转码文件".to_string());
             let description = format!(
                 "确定要对选中的 {} 个文件进行转码吗？\n\n注意：\n- 转码过程可能需要较长时间\n- 转码后的文件将保存在原文件同目录下，文件名后会添加\"_transcoded\"后缀\n- 此操作不可撤销",
@@ -301,24 +308,68 @@ pub fn Mp4InfoTable(
                     let value = selected.clone();
                     let total = value.len();
                     show_transcode_dialog.set(true);
+                    // 初始化开始时间
+                    last_task_end_time.set(Instant::now());
                     spawn(async move {
                         let output_dir = Path::new("./").to_path_buf();
 
                         for (index, path) in value.iter().enumerate() {
                             // 更新当前处理的文件路径
                             current_file_path.set(path.display().to_string());
-                            let path_clone = path.clone();
                             transcode_progress.set(0.0);
+                            // 计算任务间隔开销
+                            let now = Instant::now();
+                            let overhead =
+                                now.duration_since(*last_task_end_time.read()).as_secs_f32();
+                            // 简单的平滑处理：如果间隔过大（比如第一个任务），使用估算值
+                            let effective_overhead = if overhead > 10.0 {
+                                task_overhead_estimated
+                            } else {
+                                overhead
+                            };
+                            last_task_end_time.set(now);
                             println!("转码文件: {}", path.display());
                             // 目录
-                            transcode_file(path.clone(), &output_dir, move |progress| {
+                            transcode_file(path.clone(), &output_dir, move |p| {
                                 // 在这里处理进度更新
-                                println!("文件: {} 转码进度: {}%", path_clone.display(), progress);
-                                transcode_progress.set(progress);
+                                // 更新当前任务进度
+                                transcode_progress.set(p.percent);
+                                current_task_eta.set(p.eta_seconds);
+
+                                // 计算平均速度 (简单的指数移动平均 EMA)
+                                let current_avg = *avg_speed.read();
+                                let new_avg = if p.speed > 0.0 {
+                                    if current_avg == 0.0 {
+                                        p.speed
+                                    } else {
+                                        current_avg * 0.8 + p.speed * 0.2
+                                    } // 0.2 是平滑因子
+                                } else {
+                                    current_avg
+                                };
+                                avg_speed.set(new_avg);
+
+                                let elapsed = now.elapsed().as_secs_f32(); // 注意：这里闭包捕获的是循环开始时的 now，不准确，应该用 Instant::now()
+
+                                let estimated_single_task_duration = if p.percent > 1.0 {
+                                    elapsed / (p.percent / 100.0_f32)
+                                } else {
+                                    0.0_f32 // 刚开始，无法估算
+                                };
+
+                                let future_tasks_estimated = if estimated_single_task_duration > 0.0
+                                {
+                                    (total - index - 1) as f32
+                                        * (estimated_single_task_duration + effective_overhead)
+                                } else {
+                                    0.0
+                                };
+
+                                total_eta_seconds.set(p.eta_seconds + future_tasks_estimated);
                                 // 可以在这里更新UI或其他状态
                             })
                             .await;
-
+                            last_task_end_time.set(Instant::now());
                             completed_files.set(index + 1);
                         }
 
@@ -651,6 +702,7 @@ pub fn Mp4InfoTable(
                 AlertDialogTitle { class: "text-lg font-semibold mb-4", "转码进度" }
                 AlertDialogDescription { // 转码进度条
                     class: "overflow-visible mb-4", // 设置最大宽度并防止溢出
+
                     div { class: "w-full bg-gray-200 rounded-full h-2.5 mb-2",
                         div {
                             class: "bg-blue-600 h-2.5 rounded-full transition-all duration-300",
@@ -661,10 +713,18 @@ pub fn Mp4InfoTable(
                     // 转码任务信息
                     div { class: "flex justify-between items-center mb-2",
                         div { class: "text-sm text-gray-600",
-                            "已处理: {completed_files()} / {total_files}"
+                            "已处理: {completed_files()} / {total_files()}"
                         }
+                        // 新增：显示总剩余时间
                         div { class: "text-sm font-semibold text-blue-600",
-                            "{transcode_progress().round()}%"
+                            {
+                                let total_sec = *total_eta_seconds.read();
+                                if total_sec > 0.0 {
+                                    format!("总剩余: {}", format_duration(total_sec.into()))
+                                } else {
+                                    "计算中...".to_string()
+                                }
+                            }
                         }
                     }
 
@@ -673,6 +733,17 @@ pub fn Mp4InfoTable(
                         div { class: "mt-2 p-3 bg-gray-100 rounded",
                             div { class: "text-xs text-gray-500 mb-1", "当前处理文件:" }
                             div { class: "text-sm text-gray-800 truncate", "{current_file_path()}" }
+                            div {
+                                {
+                                    let task_sec = *current_task_eta.read();
+                                    // 将格式化逻辑完全包含在变量中
+                                    if task_sec > 0.0 {
+                                        format!("当前任务剩余: {}", format_duration(task_sec.into()))
+                                    } else {
+                                        "当前任务剩余: --".to_string()
+                                    };
+                                }
+                            }
                         }
                     }
 

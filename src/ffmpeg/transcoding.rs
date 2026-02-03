@@ -1,7 +1,14 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::utils::parse_mp4_info;
+// 定义进度回调结构体，携带更多信息
+#[derive(Clone, Debug)]
+pub struct TranscodeProgress {
+    pub percent: f32,     // 0.0 - 100.0
+    pub speed: f32,       // 当前处理速度 (倍速，例如 1.5x)
+    pub eta_seconds: f32, // 当前任务预计剩余秒数
+}
 
 /// 执行单个文件的转码操作
 ///
@@ -11,10 +18,15 @@ use crate::utils::parse_mp4_info;
 /// * `on_progress` - 进度回调函数，接收文件路径和当前进度百分比
 pub async fn transcode_file<F>(path: PathBuf, output_dir: &PathBuf, mut on_progress: F)
 where
-    F: FnMut(f32) + 'static,
+    F: FnMut(TranscodeProgress) + 'static,
 {
     // 初始进度回调
-    on_progress(0.0);
+    let start_time = Instant::now(); // 记录任务开始时间
+    on_progress(TranscodeProgress {
+        percent: 0.0,
+        speed: 0.0,
+        eta_seconds: 0.0,
+    });
 
     // 获取输出路径（在原文件名后添加"_transcoded"）
     let output_path = if let Some(file_name) = path.file_name() {
@@ -117,19 +129,37 @@ where
                 .trim_start_matches("out_time_ms=")
                 .parse::<f32>()
                 .unwrap_or(0.0);
-
+            let current_time_secs = time_ms / 1_000_000.0;
+            let elapsed_secs = start_time.elapsed().as_secs_f32();
             // 计算进度百分比
             // 用 map_or 一行搞定
+            // 计算进度
             let progress = duration_secs.map_or(0.0, |d| {
                 if d > 0 {
-                    (time_ms / 1_000_000.0 / d as f32 * 100.0).min(100.0)
+                    ((current_time_secs / d as f32) * 100.0).min(100.0)
                 } else {
                     0.0
                 }
             });
 
-            // 调用进度回调
-            on_progress(progress);
+            // 计算速度 (倍速)
+            let speed = if elapsed_secs > 0.0 && current_time_secs > 0.0 {
+                current_time_secs / elapsed_secs
+            } else {
+                0.0
+            };
+
+            // 计算当前任务剩余时间 (秒)
+            let eta = if speed > 0.0 {
+                (duration_secs.unwrap_or(0) as f32 - current_time_secs) / speed
+            } else {
+                0.0
+            };
+            on_progress(TranscodeProgress {
+                percent: progress,
+                speed,
+                eta_seconds: eta,
+            });
         }
     }
 
@@ -145,6 +175,9 @@ where
             // todo!()
         }
     }
-
-    on_progress(100.0);
+    on_progress(TranscodeProgress {
+        percent: 100.0,
+        speed: 0.0, // 完成时速度归零
+        eta_seconds: 0.0,
+    });
 }
