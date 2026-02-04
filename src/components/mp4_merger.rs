@@ -75,7 +75,7 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
                 .set_title("选择MP4文件");
 
             // 如果有上次选择的目录，设置为初始目录
-            if let Some(dir) = config().get_last_input_directory() {
+            if let Some(dir) = config().get_merge_input_directory() {
                 dialog = dialog.set_directory(dir);
             }
 
@@ -85,7 +85,7 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
                     // 使用 path() 方法获取文件路径，然后再调用 parent()
                     if let Some(parent_dir) = first_file.path().parent() {
                         let dir_path: PathBuf = parent_dir.to_path_buf();
-                        if let Err(e) = config.write().set_last_input_directory(dir_path) {
+                        if let Err(e) = config.write().set_merge_input_directory(dir_path) {
                             error_message.set(Some(format!("无法保存输入目录设置: {}", e)));
                         }
                     }
@@ -141,7 +141,7 @@ pub fn Mp4Merger(mut config: Signal<AppConfig>) -> Element {
             }
 
             // Construct output path
-            let output_dir = config_value.get_output_directory();
+            let output_dir = config_value.get_merge_output_directory();
             let output_path_final = output_dir.join(&output_filename_value);
 
             is_merging.set(true);

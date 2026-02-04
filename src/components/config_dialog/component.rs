@@ -19,7 +19,7 @@ pub fn ConfigDialog(
     let mut merge_input_dir = use_signal(|| {
         config
             .read()
-            .last_input_directory
+            .merge_input_directory
             .clone()
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -28,7 +28,7 @@ pub fn ConfigDialog(
     let mut merge_output_dir = use_signal(|| {
         config
             .read()
-            .output_directory
+            .merge_output_directory
             .clone()
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -37,7 +37,7 @@ pub fn ConfigDialog(
     let mut transcode_input_dir = use_signal(|| {
         config
             .read()
-            .compress_input_directory
+            .transcode_input_directory
             .clone()
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -46,7 +46,7 @@ pub fn ConfigDialog(
     let mut transcode_output_dir = use_signal(|| {
         config
             .read()
-            .compress_output_directory
+            .transcode_output_directory
             .clone()
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -121,19 +121,20 @@ pub fn ConfigDialog(
 
         // 更新合并相关配置
         if !merge_input_dir.read().is_empty() {
-            new_config.last_input_directory = Some(PathBuf::from(merge_input_dir.read().as_str()));
+            new_config.merge_input_directory = Some(PathBuf::from(merge_input_dir.read().as_str()));
         }
         if !merge_output_dir.read().is_empty() {
-            new_config.output_directory = Some(PathBuf::from(merge_output_dir.read().as_str()));
+            new_config.merge_output_directory =
+                Some(PathBuf::from(merge_output_dir.read().as_str()));
         }
 
         // 更新转码相关配置
         if !transcode_input_dir.read().is_empty() {
-            new_config.compress_input_directory =
+            new_config.transcode_input_directory =
                 Some(PathBuf::from(transcode_input_dir.read().as_str()));
         }
         if !transcode_output_dir.read().is_empty() {
-            new_config.compress_output_directory =
+            new_config.transcode_output_directory =
                 Some(PathBuf::from(transcode_output_dir.read().as_str()));
         }
 

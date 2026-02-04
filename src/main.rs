@@ -101,6 +101,8 @@ fn Index() -> Element {
                 TabList {
                     TabTrigger { value: "tab1".to_string(), index: 0usize, "合并" }
                     TabTrigger { value: "tab2".to_string(), index: 1usize, "文件库" }
+                    TabTrigger { value: "tab3".to_string(), index: 1usize, "转码记录" }
+
                 }
                 TabContent {
                     index: 0usize,
@@ -115,6 +117,13 @@ fn Index() -> Element {
                     class: "flex-1",
                     value: "tab2".to_string(),
                     Mp4Info { config }
+                }
+                TabContent {
+                    index: 1usize,
+                    class: "flex-1",
+                    value: "tab3".to_string(),
+                    // Mp4Info { config }
+                    "转码记录"
                 }
 
             }

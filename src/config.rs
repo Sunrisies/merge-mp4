@@ -5,10 +5,13 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppConfig {
-    pub output_directory: Option<PathBuf>,
-    pub last_input_directory: Option<PathBuf>,
-    pub compress_output_directory: Option<PathBuf>,
-    pub compress_input_directory: Option<PathBuf>,
+    // 合并相关配置
+    pub merge_input_directory: Option<PathBuf>,
+    pub merge_output_directory: Option<PathBuf>,
+
+    // 转码相关配置
+    pub transcode_input_directory: Option<PathBuf>,
+    pub transcode_output_directory: Option<PathBuf>,
 }
 
 impl AppConfig {
@@ -34,7 +37,7 @@ impl AppConfig {
         Ok(config)
     }
 
-    /// Save configuration to file
+    /// 将配置保存到文件
     pub fn save(&self) -> Result<(), io::Error> {
         let config_path = Self::config_path()?;
 
@@ -59,7 +62,7 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Get the configuration file path
+    /// 获取配置文件路径
     fn config_path() -> Result<PathBuf, io::Error> {
         let config_dir = dirs::config_dir().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "Could not find config directory")
@@ -69,39 +72,55 @@ impl AppConfig {
         println!("Config dir: {:?}", app_config_dir);
         Ok(app_config_dir.join("config.json"))
     }
+    // --- 合并 相关方法 ---
 
-    /// Get output directory, falling back to current directory if not set
-    pub fn get_output_directory(&self) -> PathBuf {
-        self.output_directory
+    /// 获取合并输入目录
+    pub fn get_merge_input_directory(&self) -> Option<PathBuf> {
+        self.merge_input_directory.clone()
+    }
+
+    /// 设置合并输入目录并保存
+    pub fn set_merge_input_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.merge_input_directory = Some(path);
+        self.save()
+    }
+
+    /// 获取合并输出目录，如果未设置，则回退到当前目录
+    pub fn get_merge_output_directory(&self) -> PathBuf {
+        self.merge_output_directory
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
-    /// 设置最后一个输入目录并保存配置
-    pub fn set_last_input_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
-        self.last_input_directory = Some(path);
+
+    /// 设置合并输出目录并保存
+    pub fn _set_merge_output_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.merge_output_directory = Some(path);
         self.save()
     }
 
-    /// 获取最后一个输入目录，如果未设置，则回退到None
-    pub fn get_last_input_directory(&self) -> Option<PathBuf> {
-        self.last_input_directory.clone()
+    // --- 转码 相关方法 ---
+
+    /// 获取转码输入目录
+    pub fn get_transcode_input_directory(&self) -> Option<PathBuf> {
+        self.transcode_input_directory.clone()
     }
-    /// 设置需要查询的目录
-    pub fn set_query_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
-        self.last_input_directory = Some(path);
+
+    /// 设置转码输入目录并保存
+    pub fn set_transcode_input_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.transcode_input_directory = Some(path);
         self.save()
     }
-    /// 获取需要查询的目录，如果未设置，则回退到None
-    pub fn get_query_directory(&self) -> Option<PathBuf> {
-        self.last_input_directory.clone()
+
+    /// 获取转码输出目录，如果未设置，则回退到当前目录
+    pub fn get_transcode_output_directory(&self) -> PathBuf {
+        self.transcode_output_directory
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
-    /// 设置压缩输出目录
-    pub fn _set_compress_output_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
-        self.compress_output_directory = Some(path);
+
+    /// 设置转码输出目录并保存
+    pub fn _set_transcode_output_directory(&mut self, path: PathBuf) -> Result<(), io::Error> {
+        self.transcode_output_directory = Some(path);
         self.save()
-    }
-    /// 获取压缩输出目录，如果未设置，则回退到None
-    pub fn _get_compress_output_directory(&self) -> Option<PathBuf> {
-        self.compress_output_directory.clone()
     }
 }

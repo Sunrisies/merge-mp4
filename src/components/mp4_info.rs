@@ -53,8 +53,6 @@ pub struct ScanProgress {
 
 #[component]
 pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
-    let mut selected_directory: Signal<Option<PathBuf>> =
-        use_signal(|| config.read().get_query_directory());
     let mut files: Signal<Vec<Mp4FileInfo>> = use_signal(Vec::new);
     let mut open = use_signal(|| false);
     let mut confirmed = use_signal(|| false);
@@ -75,7 +73,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let mut perform_scan = move || {
         // 开始时间
         let start = Instant::now();
-        let dir = selected_directory.read().clone();
+        let dir = config.read().get_transcode_input_directory();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         should_cancel.set(cancel_flag.clone());
         spawn(async move {
@@ -199,14 +197,14 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
     let select_output_directory = {
         move |_| async move {
             if let Some(result) = rfd::AsyncFileDialog::new()
-                .set_title("选择输出目录")
+                .set_title("选择输入目录")
                 .pick_folder()
                 .await
             {
                 let path = result.path().to_path_buf();
-                selected_directory.set(Some(path.clone()));
+                let _ = config.write().set_transcode_input_directory(path.clone());
 
-                if let Err(e) = config.write().set_query_directory(path.clone()) {
+                if let Err(e) = config.write().set_transcode_input_directory(path.clone()) {
                     error_message.set(Some(format!("无法保存输出目录设置: {}", e)));
                 } else {
                     // 直接调用核心逻辑，不传参数
@@ -242,15 +240,16 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                         div { class: "flex-1 min-w-0 flex justify-between items-center",
                             p { class: "text-sm sm:text-base text-gray-800 truncate",
                                 {
-                                    selected_directory
+                                    config
                                         .read()
+                                        .get_transcode_input_directory()
                                         .as_ref()
                                         .map(|p| p.display().to_string())
                                         .unwrap_or_else(|| "未选择目录".to_string())
                                 }
                             }
                             p { class: "text-xs text-gray-500 mt-1",
-                                if selected_directory.read().is_some() {
+                                if config.read().get_transcode_input_directory().is_some() {
                                     "点击右侧按钮可以更改目录"
                                 } else {
                                     "请先选择输出目录"
@@ -267,7 +266,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     // 扫描按钮
                     Button {
                         class: "bg-gradient-to-r from-green-600 px-2 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none flex items-center gap-2",
-                        disabled: selected_directory.read().is_none() || is_loading(),
+                        disabled: config.read().get_transcode_input_directory().is_none() || is_loading(),
                         onclick: on_scan_click,
 
                         if is_loading() {
@@ -298,7 +297,7 @@ pub fn Mp4Info(mut config: Signal<AppConfig>) -> Element {
                     // transcode_progress,
                     // current_file_path,
                     }
-                } else if selected_directory.read().is_some() && !is_loading() {
+                } else if config.read().get_transcode_input_directory().is_some() && !is_loading() {
                     div { class: "text-center p-8 text-gray-500", "该目录下没有找到MP4文件" }
                 }
             }

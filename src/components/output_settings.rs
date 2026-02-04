@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::input::Input;
 use crate::config::AppConfig;
 use dioxus::prelude::*;
@@ -18,10 +20,16 @@ pub fn OutputSettings(output_filename: Signal<String>, config: Signal<AppConfig>
             div { class: "flex items-center gap-3",
                 span { class: "text-gray-400 text-sm", "目录:" }
                 span { class: "flex-1 text-gray-300 text-sm break-all",
-                    if let Some(dir) = config().output_directory.as_ref() {
-                        "{dir.display()}"
-                    } else {
-                        "使用默认目录"
+
+                    {
+                        let path = config().get_transcode_output_directory();
+                        let default_path = std::env::current_dir()
+                            .unwrap_or_else(|_| PathBuf::from("."));
+                        if config().transcode_output_directory.is_none() || path == default_path {
+                            "使用默认目录".to_string()
+                        } else {
+                            path.display().to_string()
+                        }
                     }
                 }
             }
